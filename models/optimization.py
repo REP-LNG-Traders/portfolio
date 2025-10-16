@@ -21,7 +21,8 @@ from config import (
     DEMAND_PROFILE, MONTE_CARLO_CARGO_CONFIG, CARGO_SCENARIOS,
     INSURANCE_COSTS, BROKERAGE_COSTS, WORKING_CAPITAL, CARBON_COSTS,
     DEMURRAGE_COSTS, LC_COSTS,
-    HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG
+    HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG,
+    PORT_FEES, calculate_china_us_ship_fee
 )
 
 logger = logging.getLogger(__name__)
@@ -73,13 +74,15 @@ class CargoPnLCalculator:
         jkm_price: float,
         jkm_price_next_month: float,
         month: str,
-        cargo_volume: float = None  # NEW: Optional volume override
+        cargo_volume: float = None,  # NEW: Optional volume override
+        usdsgd_fx_rate: float = 1.35  # NEW: FX rate for Singapore terminal tariff
     ) -> Dict:
         """
         Calculate sale revenue based on destination and buyer.
         
         Formulas from case pack page 16:
         - Singapore: (Brent × 0.13 + Premium) + Terminal Tariff
+          * Terminal Tariff is DYNAMIC: 200,000 SGD/day ÷ FX rate ÷ cargo volume
         - Japan: JKM(M+1) + Premium + Berthing
         - China: JKM(M+1) + Premium + Berthing
         
@@ -89,6 +92,7 @@ class CargoPnLCalculator:
             brent_price, jkm_price, jkm_price_next_month: Market prices
             month: Loading month
             cargo_volume: Optional volume (for ±10% flexibility)
+            usdsgd_fx_rate: USD/SGD FX rate (for Singapore terminal tariff)
         """
         volume = cargo_volume if cargo_volume is not None else self.cargo_volume
         
@@ -98,7 +102,11 @@ class CargoPnLCalculator:
         if destination == 'Singapore':
             base_price = brent_price * 0.13
             premium = buyer_info['premium']
-            terminal_tariff = formula['terminal_tariff']
+            # Calculate terminal tariff dynamically based on cargo volume and FX rate
+            terminal_tariff = formula['calculate_terminal_tariff'](
+                cargo_volume_mmbtu=volume,
+                usdsgd_fx_rate=usdsgd_fx_rate
+            )
             sale_price_per_mmbtu = base_price + premium + terminal_tariff
             
         else:  # Japan or China
@@ -269,6 +277,104 @@ class CargoPnLCalculator:
             'opportunity_cost': opportunity_cost
         }
     
+    def calculate_port_fees(
+        self,
+        destination: str,
+        month: str,
+        cargo_volume: float = None
+    ) -> Dict:
+        """
+        Calculate port fees based on destination and cargo month.
+        
+        Port fees are based on ~174,000 m³ LNG carrier specifications:
+        - Gross Tonnage: 100,000 GT
+        - Net Tonnage: 60,000 NT
+        
+        Singapore:
+        - Port dues, pilotage, mooring, welfare fees
+        - Entry fee WAIVED for LNG vessels until March 31, 2026
+        - Total: ~$46,675 per call
+        
+        Japan:
+        - Port dues, pilotage, tug assistance, misc fees
+        - Total: ~$66,000 per call
+        
+        China:
+        - Standard fees PLUS US ship special fee
+        - US ship special fee is TIME-DEPENDENT:
+          * Oct 14, 2025 - Apr 16, 2026: $56.13/NT = $3,367,800
+          * Apr 17, 2026 - Apr 16, 2027: $89.81/NT = $5,388,600
+          * Apr 17, 2027 onwards: $123.52/NT = $7,411,200
+        - ⚠️ Makes China likely UNECONOMICAL for US-origin cargoes
+        
+        Args:
+            destination: Singapore/Japan/China
+            month: Cargo loading month (YYYY-MM format)
+            cargo_volume: Cargo volume in MMBtu (for per-MMBtu calculation)
+            
+        Returns:
+            Dict with port fee details
+        """
+        volume = cargo_volume if cargo_volume is not None else self.cargo_volume
+        
+        if destination == 'Singapore':
+            port_fees_total = PORT_FEES['Singapore']['total_per_call']
+            port_fees_per_mmbtu = port_fees_total / volume
+            
+            return {
+                'destination': destination,
+                'port_dues': PORT_FEES['Singapore']['port_dues']['typical'],
+                'maritime_welfare': PORT_FEES['Singapore']['maritime_welfare_fee'],
+                'pilotage': PORT_FEES['Singapore']['pilotage']['total'],
+                'mooring_wharfage': PORT_FEES['Singapore']['mooring_wharfage'],
+                'entry_fee': PORT_FEES['Singapore']['entry_fee']['current'],  # WAIVED
+                'total_port_fees': port_fees_total,
+                'port_fees_per_mmbtu': port_fees_per_mmbtu,
+                'note': 'Entry fee waived for LNG vessels until March 31, 2026'
+            }
+            
+        elif destination == 'Japan':
+            port_fees_total = PORT_FEES['Japan']['total_per_call']
+            port_fees_per_mmbtu = port_fees_total / volume
+            
+            return {
+                'destination': destination,
+                'port_dues': PORT_FEES['Japan']['port_dues'],
+                'pilotage': PORT_FEES['Japan']['pilotage'],
+                'tug_assistance': PORT_FEES['Japan']['tug_assistance'],
+                'other_fees': PORT_FEES['Japan']['other_fees'],
+                'total_port_fees': port_fees_total,
+                'port_fees_per_mmbtu': port_fees_per_mmbtu
+            }
+            
+        elif destination == 'China':
+            # Calculate time-dependent US ship special fee
+            us_ship_fee = calculate_china_us_ship_fee(month)
+            standard_fees = PORT_FEES['China']['standard_port_fees']['total']
+            port_fees_total = us_ship_fee + standard_fees
+            port_fees_per_mmbtu = port_fees_total / volume
+            
+            # Determine which period we're in
+            month_key = month.replace('-', '_')  # '2026-01' -> '2026_01'
+            period = 1 if month <= '2026-04' else 2 if month <= '2027-04' else 3
+            
+            return {
+                'destination': destination,
+                'us_ship_special_fee': us_ship_fee,
+                'us_ship_fee_per_nt': us_ship_fee / PORT_FEES['China']['net_tonnage'],
+                'berthing_handling': PORT_FEES['China']['standard_port_fees']['berthing_handling'],
+                'pilotage_towage': PORT_FEES['China']['standard_port_fees']['pilotage_towage'],
+                'customs_inspection': PORT_FEES['China']['standard_port_fees']['customs_inspection'],
+                'standard_fees_subtotal': standard_fees,
+                'total_port_fees': port_fees_total,
+                'port_fees_per_mmbtu': port_fees_per_mmbtu,
+                'fee_period': period,
+                'note': f'⚠️ US ship special fee: ${us_ship_fee:,.0f} - Period {period} rates apply'
+            }
+        
+        else:
+            raise ValueError(f"Unknown destination: {destination}")
+    
     def apply_demand_adjustment(
         self,
         destination: str,
@@ -351,7 +457,8 @@ class CargoPnLCalculator:
         jkm_price_next_month: float,
         brent_price: float,
         freight_rate: float,
-        cargo_volume: float = None  # NEW: Optional volume for ±10% flexibility
+        cargo_volume: float = None,  # NEW: Optional volume for ±10% flexibility
+        usdsgd_fx_rate: float = 1.35  # NEW: FX rate for Singapore terminal tariff
     ) -> Dict:
         """
         Master function: Calculate complete P&L for one cargo decision.
@@ -365,15 +472,16 @@ class CargoPnLCalculator:
             Standard pricing args...
             cargo_volume: Optional volume override (for optimization)
                          If None, uses base 3.8M MMBtu
+            usdsgd_fx_rate: USD/SGD FX rate for Singapore terminal tariff
         """
         volume = cargo_volume if cargo_volume is not None else self.cargo_volume
         
         # Step 1: Purchase cost
         purchase = self.calculate_purchase_cost(henry_hub_price, month, volume)
         
-        # Step 2: Sale revenue
+        # Step 2: Sale revenue (with FX rate for Singapore terminal tariff)
         sale = self.calculate_sale_revenue(
-            destination, buyer, brent_price, jkm_price, jkm_price_next_month, month, volume
+            destination, buyer, brent_price, jkm_price, jkm_price_next_month, month, volume, usdsgd_fx_rate
         )
         
         # Step 3: Freight cost (comprehensive including all shipping costs)
@@ -388,10 +496,13 @@ class CargoPnLCalculator:
         # Step 4: Boil-off opportunity cost (already in sale calculation, but track separately)
         boil_off = self.calculate_boil_off_opportunity_cost(destination, sale['sale_price_per_mmbtu'], volume)
         
-        # Step 5: Gross P&L before adjustments
-        gross_pnl = sale['total_revenue'] - purchase['total_cost'] - freight['total_freight_cost']
+        # Step 5: Port fees (time-dependent for China)
+        port_fees = self.calculate_port_fees(destination, month, volume)
         
-        # Step 6: Credit risk adjustment
+        # Step 6: Gross P&L before adjustments
+        gross_pnl = sale['total_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - port_fees['total_port_fees']
+        
+        # Step 7: Credit risk adjustment
         credit_adj = self.apply_credit_risk_adjustment(
             sale['buyer_credit_rating'],
             sale['total_revenue'],
@@ -399,9 +510,9 @@ class CargoPnLCalculator:
         )
         
         # Recalculate P&L with credit adjustment
-        pnl_after_credit = credit_adj['credit_adjusted_revenue'] - purchase['total_cost'] - freight['total_freight_cost']
+        pnl_after_credit = credit_adj['credit_adjusted_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - port_fees['total_port_fees']
         
-        # Step 7: Demand adjustment
+        # Step 8: Demand adjustment
         demand_adj = self.apply_demand_adjustment(
             destination,
             sale['buyer_credit_rating'],
@@ -434,6 +545,8 @@ class CargoPnLCalculator:
             'purchase_cost': purchase['total_cost'],
             'sale_revenue_gross': sale['total_revenue'],
             'freight_cost': freight['total_freight_cost'],
+            'port_fees': port_fees['total_port_fees'],  # NEW: Port fees
+            'port_fees_per_mmbtu': port_fees['port_fees_per_mmbtu'],  # NEW
             'gross_pnl': gross_pnl,
             
             # Adjustments
@@ -446,7 +559,10 @@ class CargoPnLCalculator:
             
             # Metadata
             'voyage_days': VOYAGE_DAYS[f'USGC_to_{destination}'],
-            'volume_delivered': sale['delivered_volume']
+            'volume_delivered': sale['delivered_volume'],
+            
+            # Port fee details (especially important for China with time-dependent fees)
+            'port_fees_details': port_fees
         }
     
     def calculate_cancel_option(self, month: str) -> Dict:
