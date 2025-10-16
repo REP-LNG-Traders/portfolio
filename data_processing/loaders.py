@@ -13,7 +13,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path("data/raw")
+DATA_DIR = Path("data_processing/raw")
 
 
 def load_henry_hub_data() -> pd.DataFrame:

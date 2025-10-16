@@ -28,12 +28,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import modules
-from src.data_loader import load_all_data
-from src.cargo_optimization import (
+from data_processing.loaders import load_all_data
+from models.optimization import (
     CargoPnLCalculator, StrategyOptimizer,
     MonteCarloRiskAnalyzer, ScenarioAnalyzer
 )
-from config import CARGO_CONTRACT
+from config.constants import CARGO_CONTRACT
 
 
 def prepare_forecasts_simple(data: dict) -> Dict[str, pd.Series]:
@@ -130,7 +130,7 @@ def prepare_forecasts_arima_garch(data: dict) -> Dict[str, pd.Series]:
         Dict with keys ['henry_hub', 'jkm', 'brent', 'freight']
         Each value is pd.Series indexed by month string ('2026-01', etc.)
     """
-    from src.forecasting import (
+    from models.forecasting import (
         test_stationarity, 
         fit_arima_model, fit_garch_model, generate_simple_forecast
     )
@@ -191,7 +191,13 @@ def prepare_forecasts_arima_garch(data: dict) -> Dict[str, pd.Series]:
             logger.info(f"\nUsing ARIMA+GARCH for {commodity}...")
             
             # Get historical data
-            if commodity == 'brent':
+            if commodity == 'henry_hub':
+                hist_data = data['henry_hub']['HH_Historical'].dropna()
+                unit = '$/MMBtu'
+            elif commodity == 'jkm':
+                hist_data = data['jkm']['JKM_Historical'].dropna()
+                unit = '$/MMBtu'
+            elif commodity == 'brent':
                 hist_data = data['brent']['Brent'].dropna()
                 unit = '$/bbl'
             elif commodity == 'freight':
@@ -469,7 +475,7 @@ def generate_hedged_strategies(
     hh_forwards = forecasts['henry_hub']
     hh_spots = forecasts['henry_hub']  # Using same forecast as proxy for spot
     
-    from src.cargo_optimization import CargoPnLCalculator
+    from models.optimization import CargoPnLCalculator
     
     hedged_strategies = {}
     calculator = CargoPnLCalculator()
