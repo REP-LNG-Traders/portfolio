@@ -1,5 +1,26 @@
 """
 Business constants and parameters.
+
+KEY ASSUMPTIONS:
+===============
+
+1. CURRENCY ASSUMPTION (FX RISK):
+   - All prices, costs, and revenues are assumed to be in USD
+   - Singapore sales: Assumed USD-denominated (not SGD conversion)
+   - Rationale: Common industry practice; simplifies analysis
+   - FX data loaded but not used (out of scope for this analysis)
+   - Note: In practice, Singapore LNG trades in USD despite location
+   
+2. PRICE ASSUMPTIONS:
+   - Henry Hub: Uses NYMEX NG forward curve (most liquid, reliable)
+   - JKM: Uses forward curve where available, ARIMA+GARCH for extensions
+   - Brent: Historical data, ARIMA+GARCH for forecasting
+   - Freight: Baltic LNG data with monthly aggregation to handle volatility
+   
+3. OPERATIONAL ASSUMPTIONS:
+   - Boil-off: 0.05%/day (industry standard for modern LNG carriers)
+   - Voyage days: USGC to Singapore (25d), Japan (20d), China (22d)
+   - Volume flexibility: ±10% per contract terms (case pack page 15)
 """
 
 # =============================================================================
@@ -55,7 +76,15 @@ CARGO_CONTRACT = {
     'nomination_deadline': 'M-2',  # Must nominate by M-2
     'loading_window': 'M',  # Load in month M
     'delivery_window': 'M+1',  # Deliver in month M+1
-    'tolling_fee': 2.50  # $2.50/MMBtu tolling fee (from contract terms)
+    'tolling_fee': 2.50,  # $2.50/MMBtu tolling fee (from contract terms)
+    'decision_timeline': {
+        '2026-01': '2025-11',  # November 2025: Decide on January 2026 cargo
+        '2026-02': '2025-12',  # December 2025: Decide on February 2026 cargo
+        '2026-03': '2026-01',  # January 2026: Decide on March 2026 cargo
+        '2026-04': '2026-02',  # February 2026: Decide on April 2026 cargo
+        '2026-05': '2026-03',  # March 2026: Decide on May 2026 cargo
+        '2026-06': '2026-04'   # April 2026: Decide on June 2026 cargo
+    }
 }
 
 # =============================================================================

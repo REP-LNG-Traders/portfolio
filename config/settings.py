@@ -109,7 +109,7 @@ CARGO_FORECASTING_METHOD = {
     'henry_hub': {'method': 'arima_garch', 'reason': 'High quality data, good for ARIMA+GARCH'},
     'jkm': {'method': 'arima_garch', 'reason': 'High quality data, good for ARIMA+GARCH'},
     'brent': {'method': 'arima_garch', 'reason': 'High quality data, good for ARIMA+GARCH'},
-    'freight': {'method': 'simple', 'reason': 'Data quality issues, using simple forecast'}
+    'freight': {'method': 'arima_garch', 'reason': 'Using ARIMA+GARCH for volatility forecasting'}
 }
 CARGO_ARIMA_GARCH_CONFIG = {
     'enabled': True,

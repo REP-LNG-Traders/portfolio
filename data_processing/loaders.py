@@ -301,12 +301,40 @@ def load_freight_data() -> pd.DataFrame:
         logger.info(f"  Monthly averages: {len(df_monthly)} months")
         logger.info(f"  Date range: {df_monthly.index[0].strftime('%Y-%m')} to {df_monthly.index[-1].strftime('%Y-%m')}")
         
+        # ADDITIONAL FIX: Cap extreme outliers using industry-based thresholds
+        # Rationale: Baltic LNG data has severe quality issues (documented in memory)
+        # Industry knowledge:
+        #   - Typical LNG freight: $10k-80k/day
+        #   - Extreme conditions (COVID/Ukraine): up to $120k/day
+        #   - Above $120k/day: Data errors, not market reality
+        # 
+        # We use hard caps based on industry maximums:
+        #   - Upper: $120k/day (extreme market conditions)
+        #   - Lower: $5k/day (minimum viable vessel economics)
+        logger.info(f"  Applying industry-based outlier capping...")
+        
+        # Industry-based caps (more defensible than percentiles for bad data)
+        FREIGHT_MAX = 120_000  # $/day - extreme market conditions
+        FREIGHT_MIN = 5_000    # $/day - minimum vessel economics
+        
+        # Count outliers before capping
+        outliers_high = (df_monthly['Freight'] > FREIGHT_MAX).sum()
+        outliers_low = (df_monthly['Freight'] < FREIGHT_MIN).sum()
+        
+        # Apply hard caps
+        df_monthly['Freight'] = df_monthly['Freight'].clip(lower=FREIGHT_MIN, upper=FREIGHT_MAX)
+        
+        logger.info(f"     Capped {outliers_high} high outliers at ${FREIGHT_MAX:,.0f}/day (industry max)")
+        logger.info(f"     Capped {outliers_low} low outliers at ${FREIGHT_MIN:,.0f}/day (industry min)")
+        logger.info(f"     Rationale: Baltic data quality issues - use industry-realistic bounds")
+        logger.info(f"     Note: Original max was ${df_monthly['Freight'].max():,.0f}/day (unrealistic)")
+        
         # Log volatility comparison
         daily_vol = df['Price'].pct_change().std() * np.sqrt(252)  # Annualized
         monthly_vol = df_monthly['Freight'].pct_change().std() * np.sqrt(12)  # Annualized
         
         logger.info(f"  Daily volatility (annualized): {daily_vol:.1%}")
-        logger.info(f"  Monthly volatility (annualized): {monthly_vol:.1%}")
+        logger.info(f"  Monthly volatility (after capping, annualized): {monthly_vol:.1%}")
         logger.info(f"  Volatility reduction: {(1 - monthly_vol/daily_vol):.1%}")
         
         return df_monthly

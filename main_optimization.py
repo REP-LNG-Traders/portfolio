@@ -961,6 +961,53 @@ def main(run_monte_carlo: bool = True, run_scenarios: bool = True, use_arima_gar
                     logger.info(f"  Sharpe Ratio:  {unhedged_mc['sharpe_ratio']:.2f} -> {hedged_mc['sharpe_ratio']:.2f}")
                     logger.info(f"\n  Conclusion: Hedging reduces risk with minimal P&L impact")
         
+        # =============================================================================
+        # EMBEDDED OPTION ANALYSIS
+        # =============================================================================
+        
+        logger.info("\n" + "="*80)
+        logger.info("EMBEDDED OPTION ANALYSIS")
+        logger.info("="*80)
+        
+        try:
+            from models.option_valuation import run_embedded_option_analysis
+            
+            # Get GARCH volatilities for option pricing
+            garch_volatilities = {}
+            for commodity in ['henry_hub', 'jkm', 'brent', 'freight']:
+                if commodity in forecasts:
+                    # Use average volatility from GARCH models
+                    vol_series = forecasts[commodity].pct_change().std() * np.sqrt(12)  # Annualized
+                    garch_volatilities[commodity] = vol_series
+            
+            # Run embedded option analysis
+            option_results = run_embedded_option_analysis(forecasts, garch_volatilities)
+            
+            # Add option results to output files
+            output_files['Embedded Options Analysis'] = option_results['file_paths']['options_file']
+            output_files['Option Scenarios'] = option_results['file_paths']['scenarios_file']
+            output_files['Option Visualization'] = option_results['file_paths']['visualization_file']
+            
+            # Log option analysis results
+            logger.info(f"Embedded Option Analysis Results:")
+            logger.info(f"  Total Options Available: {option_results['total_options_available']}")
+            logger.info(f"  Options to Exercise: {option_results['options_to_exercise']}")
+            logger.info(f"  Total Expected Uplift: ${option_results['total_expected_uplift_millions']:.1f}M")
+            logger.info(f"  Confidence Level: {option_results['confidence']}")
+            
+            # Add option uplift to strategy results
+            if option_results['options_to_exercise'] > 0:
+                logger.info(f"\nStrategy Enhancement with Embedded Options:")
+                for strategy_name in strategies.keys():
+                    if strategy_name in strategies:
+                        base_pnl = strategies[strategy_name]['total_pnl']
+                        enhanced_pnl = base_pnl + option_results['total_expected_uplift_millions'] * 1e6
+                        logger.info(f"  {strategy_name:20s}: ${base_pnl/1e6:.1f}M -> ${enhanced_pnl/1e6:.1f}M (+${option_results['total_expected_uplift_millions']:.1f}M from options)")
+            
+        except Exception as e:
+            logger.warning(f"Embedded option analysis failed: {e}")
+            logger.info("Continuing without option analysis...")
+        
         logger.info("\nOUTPUT FILES:")
         for file_type, file_path in output_files.items():
             logger.info(f"  {file_type:20s}: {file_path}")

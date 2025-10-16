@@ -526,7 +526,7 @@ class CargoPnLCalculator:
         Returns:
             Dict with both unhedged and hedged P&L components
         """
-        from src.hedging import HenryHubHedge
+        from models.risk_management import HenryHubHedge
         
         volume = cargo_volume if cargo_volume is not None else self.cargo_volume
         
