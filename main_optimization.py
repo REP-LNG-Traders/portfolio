@@ -614,8 +614,8 @@ def generate_hedged_strategies(
     logger.info("  - Effect: Lock in HH cost, reduce P&L volatility")
     
     # Get HH forward prices (for M-2 hedge initiation)
-    # Note: In reality, we'd use M-2 forward curve, but we'll use our forecasts as proxy
-    # (This is simplified for competition - assumes forward curve = our forecast)
+    # Simplified assumption: M-2 forward prices approximated by forecast values
+    # In production, would use actual M-2 forward curve data
     hh_forwards = forecasts['henry_hub']
     hh_spots = forecasts['henry_hub']  # Using same forecast as proxy for spot
     
@@ -637,16 +637,14 @@ def generate_hedged_strategies(
                 monthly_results_list.append(decision)
                 continue
             
-            # Get prices
-            # For hedging, we need to distinguish:
-            # - hh_forward_m2: Price when we hedge (M-2), from forward curve
-            # - hh_spot_m: Price when cargo loads (M), what we actually pay
+            # Hedging requires two price points:
+            # - hh_forward_m2: Price when hedge is initiated (M-2)
+            # - hh_spot_m: Spot price at cargo loading (M)
             #
-            # SIMPLIFICATION FOR COMPETITION:
-            # We use the same forecast for both (assumes forward curve is our forecast)
-            # In Monte Carlo, these will vary independently
-            hh_forward_m2 = hh_forwards[month]  # Would be M-2 forward in reality
-            hh_spot_m = hh_spots[month]         # Would vary in Monte Carlo
+            # Current implementation uses forecast for both
+            # Monte Carlo simulation models independent variation
+            hh_forward_m2 = hh_forwards[month]
+            hh_spot_m = hh_spots[month]
             
             # Get next month for JKM M+1 pricing
             month_dt = pd.to_datetime(month)

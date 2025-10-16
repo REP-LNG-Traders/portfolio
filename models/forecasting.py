@@ -793,7 +793,7 @@ def fit_garch_model(
         logger.info(f"  Residual std: {resid_clean.std():.4f}")
         
         # Fit GARCH model
-        # Note: arch package expects returns (%), so scale if needed
+        # ARCH package expects percentage returns for volatility estimation
         model = arch_model(
             resid_clean,
             vol='Garch',

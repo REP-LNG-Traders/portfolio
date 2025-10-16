@@ -245,7 +245,7 @@ BUYERS = {
 }
 
 # =============================================================================
-# BUYER CREDIT RATINGS (extracted for easy access)
+# BUYER CREDIT RATINGS (by destination and buyer)
 # =============================================================================
 
 BUYER_CREDIT_RATINGS = {

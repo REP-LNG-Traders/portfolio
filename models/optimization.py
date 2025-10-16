@@ -494,16 +494,16 @@ class CargoPnLCalculator:
         
         KEY CONCEPT:
         ========================
-        We hedge our HH purchase cost risk using NYMEX NG futures.
+        Henry Hub purchase cost risk is hedged using NYMEX NG futures.
         
         Timeline:
-        - M-2 (Nov for Jan cargo): Nominate cargo, BUY HH futures at forward price
-        - M (Jan): Cargo loads, futures settle to spot, we pay actual spot
+        - M-2 (Nov for Jan cargo): Nominate cargo, buy HH futures at forward price
+        - M (Jan): Cargo loads, futures settle to spot, pay actual spot price
         - Hedge P&L offsets the cost movement
         
         Outcome:
-        - If HH rises: Futures gain offsets higher purchase cost
-        - If HH falls: Futures loss offsets lower purchase cost  
+        - HH price increases: Futures gain offsets higher purchase cost
+        - HH price decreases: Futures loss offsets lower purchase cost  
         - Net effect: HH cost locked at M-2 forward price
         
         WHY THIS MATTERS:

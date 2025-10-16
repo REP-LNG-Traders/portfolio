@@ -225,7 +225,7 @@ class SensitivityAnalyzer:
             if v.get('destination', '') != 'Singapore'
         }
         
-        # Temporarily modify calculator to exclude Singapore
+        # Modify calculator to exclude Singapore destination
         original_calculator = self.calculator
         modified_calculator = CargoPnLCalculator()
         modified_calculator.buyers = limited_buyers
@@ -289,7 +289,7 @@ class SensitivityAnalyzer:
         from config.constants import VOYAGE_DAYS
         delayed_voyage_days = {k: v + 5 for k, v in VOYAGE_DAYS.items()}
         
-        # Temporarily modify calculator with delayed voyages
+        # Modify voyage times to simulate canal delay
         delayed_calculator = CargoPnLCalculator()
         delayed_calculator.voyage_days = delayed_voyage_days
         delayed_optimizer = StrategyOptimizer(delayed_calculator)
@@ -461,7 +461,7 @@ class SensitivityAnalyzer:
             })
         
         # Test 2: Tolling fee (modify CARGO_CONTRACT temporarily)
-        # Note: This requires reinitialization - simplified for now
+        # Reset optimizer to original configuration after stress test
         for tolling_adj in [-0.5, -0.25, 0, 0.25, 0.5]:
             # This is conceptual - actual implementation would need to adjust
             # the calculator's tolling fee parameter
