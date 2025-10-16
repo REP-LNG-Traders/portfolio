@@ -11,6 +11,7 @@ This script:
 import logging
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from pathlib import Path
 from datetime import datetime
 from typing import Dict
@@ -112,6 +113,251 @@ def prepare_forecasts_simple(data: dict) -> Dict[str, pd.Series]:
     logger.info("\n" + "="*80)
     logger.info("FORECAST PREPARATION COMPLETE")
     logger.info("="*80)
+    
+    return forecasts
+
+
+def prepare_forecasts_arima_garch(data: dict) -> Dict[str, pd.Series]:
+    """
+    Prepare price forecasts using ARIMA+GARCH for Brent and Freight,
+    forward curves for Henry Hub and JKM.
+    
+    Forecasting Strategy (explained in config.py):
+    - Henry Hub & JKM: Use market forward curves (superior to modeling)
+    - Brent & Freight: Use ARIMA+GARCH (no forward curves available)
+    
+    Returns:
+        Dict with keys ['henry_hub', 'jkm', 'brent', 'freight']
+        Each value is pd.Series indexed by month string ('2026-01', etc.)
+    """
+    from src.forecasting import (
+        test_stationarity, 
+        fit_arima_model, fit_garch_model, generate_simple_forecast
+    )
+    from config import (
+        CARGO_FORECASTING_METHOD, CARGO_ARIMA_GARCH_CONFIG,
+        ARIMA_CONFIG, GARCH_CONFIG
+    )
+    
+    logger.info("="*80)
+    logger.info("PREPARING PRICE FORECASTS (ARIMA+GARCH INTEGRATION)")
+    logger.info("="*80)
+    
+    # Target months: Jan-Jul 2026 (need Jul for JKM M+1 pricing)
+    months = pd.date_range('2026-01', '2026-07', freq='MS')
+    forecasts = {}
+    garch_volatilities = {}  # Store GARCH volatilities for Monte Carlo
+    
+    # Process each commodity
+    for commodity in ['henry_hub', 'jkm', 'brent', 'freight']:
+        logger.info(f"\n{'='*80}")
+        logger.info(f"COMMODITY: {commodity.upper().replace('_', ' ')}")
+        logger.info(f"{'='*80}")
+        
+        method_config = CARGO_FORECASTING_METHOD[commodity]
+        method = method_config['method']
+        reason = method_config['reason']
+        
+        logger.info(f"Method: {method.upper()}")
+        logger.info(f"Reason: {reason}")
+        
+        if method == 'forward_curve':
+            # ================================================================
+            # USE FORWARD CURVE (Henry Hub & JKM)
+            # ================================================================
+            logger.info(f"\nUsing forward curve for {commodity}...")
+            
+            if commodity == 'henry_hub':
+                fwd_data = data['henry_hub']['HH_Forward'].dropna()
+            elif commodity == 'jkm':
+                fwd_data = data['jkm']['JKM_Forward'].dropna()
+            
+            forecast_dict = {}
+            for month in months:
+                closest_val = fwd_data.asof(month)
+                if pd.isna(closest_val):
+                    closest_val = fwd_data.iloc[-1]
+                forecast_dict[month.strftime('%Y-%m')] = closest_val
+            
+            forecasts[commodity] = pd.Series(forecast_dict, name=commodity)
+            
+            logger.info(f"  Forecast range: ${forecasts[commodity].min():.2f} - ${forecasts[commodity].max():.2f}")
+            logger.info(f"  Jan 2026: ${forecasts[commodity]['2026-01']:.2f}")
+            
+        elif method == 'arima_garch':
+            # ================================================================
+            # USE ARIMA+GARCH (Brent & Freight)
+            # ================================================================
+            logger.info(f"\nUsing ARIMA+GARCH for {commodity}...")
+            
+            # Get historical data
+            if commodity == 'brent':
+                hist_data = data['brent']['Brent'].dropna()
+                unit = '$/bbl'
+            elif commodity == 'freight':
+                hist_data = data['freight']['Freight'].dropna()
+                unit = '$/day'
+            
+            # Resample to monthly (use last value of each month)
+            monthly_data = hist_data.resample('MS').last().dropna()
+            
+            logger.info(f"  Historical data: {len(hist_data)} daily observations")
+            logger.info(f"  Monthly data: {len(monthly_data)} months ({len(monthly_data)/12:.1f} years)")
+            logger.info(f"  Date range: {monthly_data.index[0].date()} to {monthly_data.index[-1].date()}")
+            
+            # Check data sufficiency
+            min_months = CARGO_ARIMA_GARCH_CONFIG['min_months_required']
+            if len(monthly_data) < min_months:
+                if CARGO_ARIMA_GARCH_CONFIG['warn_if_below_minimum']:
+                    logger.warning(f"  ⚠️  WARNING: Only {len(monthly_data)} months available (ideal: {min_months}+)")
+                    logger.warning(f"      Proceeding anyway - acceptable for competition purposes")
+            
+            try:
+                # ============================================================
+                # STEP 1: FIT ARIMA MODEL
+                # ============================================================
+                logger.info(f"\n  Step 1: Fitting ARIMA model...")
+                
+                # Test stationarity (returns dict with 'd_recommended')
+                stationarity_result = test_stationarity(monthly_data, name=commodity)
+                d_order = stationarity_result['d_recommended']
+                
+                logger.info(f"    Using differencing order d={d_order}")
+                
+                # Fit ARIMA with grid search
+                arima_model, arima_info = fit_arima_model(
+                    monthly_data,
+                    market_name=commodity,
+                    d=d_order,
+                    max_p=ARIMA_CONFIG['max_p'],
+                    max_q=ARIMA_CONFIG['max_q']
+                )
+                
+                if arima_model is None or not arima_info.get('success', False):
+                    raise ValueError(f"ARIMA fitting failed: {arima_info.get('error', 'Unknown error')}")
+                
+                arima_order = arima_info['order']
+                logger.info(f"    ✓ ARIMA{arima_order} fitted successfully")
+                logger.info(f"      AIC: {arima_info['aic']:.2f}, BIC: {arima_info['bic']:.2f}")
+                
+                # ============================================================
+                # STEP 2: FIT GARCH MODEL ON RESIDUALS
+                # ============================================================
+                logger.info(f"\n  Step 2: Fitting GARCH model...")
+                
+                residuals = arima_model.resid
+                
+                # Fit GARCH
+                garch_model, garch_vol, garch_info = fit_garch_model(
+                    residuals,
+                    market_name=commodity,
+                    p=GARCH_CONFIG['default_p'],
+                    q=GARCH_CONFIG['default_q']
+                )
+                
+                if garch_model is not None and garch_info.get('success', False):
+                    garch_order = (garch_info['p'], garch_info['q'])
+                    logger.info(f"    ✓ GARCH{garch_order} fitted successfully")
+                    logger.info(f"      Annual volatility: {garch_vol:.2%}")
+                    
+                    # Store GARCH volatility for Monte Carlo
+                    garch_volatilities[commodity] = garch_vol
+                else:
+                    logger.warning(f"    ⚠️  GARCH fitting failed: {garch_info.get('error', 'Unknown error')}")
+                    logger.warning(f"       Will use ARIMA-only forecasts")
+                    garch_model = None
+                
+                # ============================================================
+                # STEP 3: GENERATE FORECASTS
+                # ============================================================
+                logger.info(f"\n  Step 3: Generating {CARGO_ARIMA_GARCH_CONFIG['forecast_months']}-month forecast...")
+                
+                # ARIMA forecast
+                horizon_months = CARGO_ARIMA_GARCH_CONFIG['forecast_months']
+                arima_forecast_df = generate_simple_forecast(
+                    arima_model, 
+                    horizon=horizon_months,
+                    confidence_level=0.95
+                )
+                
+                # Create forecast series for target months
+                forecast_dict = {}
+                for i, month in enumerate(months):
+                    month_str = month.strftime('%Y-%m')
+                    forecast_dict[month_str] = arima_forecast_df['forecast'].iloc[i]
+                
+                forecasts[commodity] = pd.Series(forecast_dict, name=commodity)
+                
+                logger.info(f"    ✓ Forecast complete")
+                logger.info(f"      Range: {forecasts[commodity].min():.2f} - {forecasts[commodity].max():.2f} {unit}")
+                logger.info(f"      Jan 2026: {forecasts[commodity]['2026-01']:.2f} {unit}")
+                logger.info(f"      Jul 2026: {forecasts[commodity]['2026-07']:.2f} {unit}")
+                
+                # ============================================================
+                # STEP 4: SAVE DIAGNOSTICS (if configured)
+                # ============================================================
+                if CARGO_ARIMA_GARCH_CONFIG['save_diagnostics']:
+                    logger.info(f"\n  Step 4: Saving diagnostics...")
+                    
+                    # Create diagnostics directory
+                    diag_dir = Path("outputs/diagnostics/arima_garch")
+                    diag_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Save forecast plot
+                    plt.figure(figsize=(12, 6))
+                    
+                    # Historical
+                    plt.plot(monthly_data.index, monthly_data.values, 
+                            label='Historical', color='blue', linewidth=1.5)
+                    
+                    # Forecast
+                    forecast_dates = pd.date_range(monthly_data.index[-1] + pd.DateOffset(months=1),
+                                                   periods=horizon_months, freq='MS')
+                    plt.plot(forecast_dates, arima_forecast_df['forecast'].values,
+                            label='ARIMA+GARCH Forecast', color='red', linewidth=2)
+                    
+                    # Confidence intervals
+                    plt.fill_between(forecast_dates, 
+                                    arima_forecast_df['lower'].values,
+                                    arima_forecast_df['upper'].values,
+                                    alpha=0.3, color='red', label='95% CI')
+                    
+                    plt.axvline(monthly_data.index[-1], color='black', 
+                               linestyle='--', alpha=0.5, label='Forecast Start')
+                    plt.xlabel('Date')
+                    plt.ylabel(f'Price ({unit})')
+                    plt.title(f'{commodity.upper().replace("_", " ")} - ARIMA+GARCH Forecast')
+                    plt.legend()
+                    plt.grid(alpha=0.3)
+                    plt.tight_layout()
+                    
+                    plot_file = diag_dir / f"{commodity}_forecast.png"
+                    plt.savefig(plot_file, dpi=150)
+                    plt.close()
+                    
+                    logger.info(f"      Saved plot: {plot_file}")
+                
+            except Exception as e:
+                logger.error(f"  ✗ ARIMA+GARCH failed for {commodity}: {e}")
+                logger.info(f"    Falling back to simple method...")
+                
+                # Fallback to latest value (simple approach)
+                latest_value = monthly_data.iloc[-1]
+                forecast_dict = {month.strftime('%Y-%m'): latest_value for month in months}
+                forecasts[commodity] = pd.Series(forecast_dict, name=commodity)
+                
+                logger.info(f"      Fallback: Using latest value = {latest_value:.2f} {unit}")
+    
+    logger.info("\n" + "="*80)
+    logger.info("FORECAST PREPARATION COMPLETE")
+    logger.info("="*80)
+    
+    logger.info("\nForecast Summary:")
+    for commodity in ['henry_hub', 'jkm', 'brent', 'freight']:
+        method = CARGO_FORECASTING_METHOD[commodity]['method']
+        jan_val = forecasts[commodity]['2026-01']
+        jul_val = forecasts[commodity]['2026-07']
+        logger.info(f"  {commodity:12s} ({method:15s}): Jan=${jan_val:7.2f}  Jul=${jul_val:7.2f}")
     
     return forecasts
 
@@ -325,14 +571,16 @@ def print_summary(strategies: Dict):
     logger.info("="*80)
 
 
-def main(run_monte_carlo: bool = True, run_scenarios: bool = True):
+def main(run_monte_carlo: bool = True, run_scenarios: bool = True, use_arima_garch: bool = True):
     """
     Main execution function.
     
     Args:
         run_monte_carlo: Whether to run Monte Carlo simulation (default True)
         run_scenarios: Whether to run scenario analysis (default True)
+        use_arima_garch: Whether to use ARIMA+GARCH for Brent/Freight (default True)
     """
+    from config import CARGO_ARIMA_GARCH_CONFIG
     
     try:
         # Step 1: Load data
@@ -345,9 +593,17 @@ def main(run_monte_carlo: bool = True, run_scenarios: bool = True):
         logger.info("\n" + "="*80)
         logger.info("STEP 2: PREPARING FORECASTS")
         logger.info("="*80)
-        forecasts = prepare_forecasts_simple(data)
+        
+        # Choose forecasting method based on configuration
+        if use_arima_garch and CARGO_ARIMA_GARCH_CONFIG['enabled']:
+            logger.info("Using ARIMA+GARCH for Brent and Freight forecasting...")
+            forecasts = prepare_forecasts_arima_garch(data)
+        else:
+            logger.info("Using simple forecasting (forward curves + naive methods)...")
+            forecasts = prepare_forecasts_simple(data)
         
         # Step 2b: Calculate volatilities and correlations (for Monte Carlo)
+        volatilities, correlations = {}, pd.DataFrame()  # Initialize for scope
         if run_monte_carlo:
             volatilities, correlations = calculate_volatilities_and_correlations(data)
         

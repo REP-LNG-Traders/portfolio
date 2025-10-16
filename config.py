@@ -718,6 +718,63 @@ CARGO_SCENARIOS = {
     }
 }
 
+# =============================================================================
+# ARIMA+GARCH FORECASTING CONFIGURATION (CARGO OPTIMIZATION)
+# =============================================================================
+
+# Which commodities should use ARIMA+GARCH vs forward curves
+CARGO_FORECASTING_METHOD = {
+    'henry_hub': {
+        'method': 'forward_curve',  # Use market forward curve
+        'reason': 'Forward curve available with 15 contracts (Nov 2025-Jan 2027). '
+                  'Market prices embed consensus expectations. '
+                  'Only 37 months historical (insufficient for robust ARIMA+GARCH).'
+    },
+    'jkm': {
+        'method': 'forward_curve',  # Use market forward curve
+        'reason': 'Forward curve available with 14 contracts (Nov 2025-Dec 2026). '
+                  'Market prices embed consensus expectations. '
+                  'Only 37 months historical (insufficient for robust ARIMA+GARCH).'
+    },
+    'brent': {
+        'method': 'arima_garch',  # Use time series forecasting
+        'reason': 'NO forward curve available in competition data. '
+                  'Currently using naive forecast (latest value). '
+                  'ARIMA+GARCH provides sophisticated forecasting with 461 months (38 years) of excellent historical data.'
+    },
+    'freight': {
+        'method': 'arima_garch',  # Use time series forecasting
+        'reason': 'NO forward curve available in competition data. '
+                  'Currently using naive forecast (recent average). '
+                  'ARIMA+GARCH provides sophisticated forecasting with 55 months (4.6 years) of historical data. '
+                  'NOTE: 55 months is slightly below ideal 60, but acceptable for competition.'
+    }
+}
+
+# ARIMA+GARCH configuration for cargo optimization
+CARGO_ARIMA_GARCH_CONFIG = {
+    'enabled': True,                     # Master switch
+    'forecast_months': 7,                # Jan-Jul 2026 (need Jul for JKM M+1 pricing)
+    'use_existing_config': True,         # Use ARIMA_CONFIG and GARCH_CONFIG from above
+    
+    # Warnings
+    'min_months_required': 60,           # Ideal minimum for ARIMA+GARCH
+    'warn_if_below_minimum': True,       # Raise warning if data < min_months
+    
+    # Fallback strategy (if ARIMA+GARCH fails)
+    'fallback_to_forward_curve': True,   # Use forward curve if available
+    'fallback_to_holt': True,            # Use exponential smoothing otherwise
+    'fallback_to_naive': True,           # Last resort: naive forecast
+    
+    # Diagnostics and output
+    'save_diagnostics': True,            # Save diagnostic plots/reports
+    'save_forecasts': True,              # Save forecast CSV
+    'compare_with_forward_curve': False, # Compare ARIMA+GARCH with forward curve (for HH/JKM)
+    
+    # Monte Carlo integration
+    'use_garch_volatility_in_mc': True,  # Use GARCH volatilities in Monte Carlo simulation
+}
+
 
 # =============================================================================
 # MAIN EXECUTION
