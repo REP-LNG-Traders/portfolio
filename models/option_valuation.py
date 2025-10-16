@@ -2,7 +2,12 @@
 Embedded Option Analysis - Real Options Framework
 
 This module implements practical embedded option analysis for the LNG contract's
-optional cargoes (up to 5 additional cargoes with >3 month nomination).
+optional cargoes (up to 5 additional cargoes within Jan-Jun 2026 period, with >3 month nomination).
+
+CONTRACT TERMS:
+- Base contract: 6 cargoes (Jan-Jun 2026)
+- Optional: Up to 5 ADDITIONAL cargoes within same period if nominated >3 months in advance
+- This analysis evaluates Feb-Jun options (5 months) with M-3 decision points
 
 REAL OPTIONS FRAMEWORK:
 - Uses Black-Scholes framework adapted for commodity options
@@ -16,6 +21,7 @@ KEY FEATURES:
 3. Risk-Adjusted Decision Framework (4-level hierarchy)
 4. Scenario Analysis (Bull/Base/Bear cases)
 5. Integration with main optimization strategy
+6. Enforces maximum 5 options limit per contract
 
 Author: LNG Trading Optimization Team
 Date: October 2025
@@ -47,7 +53,8 @@ class EmbeddedOptionAnalyzer:
     """
     Analyzes embedded options in LNG contract using real options framework.
     
-    Contract allows up to 5 additional cargoes if nominated >3 months in advance.
+    Contract allows up to 5 additional cargoes within the Jan-Jun 2026 period
+    if nominated >3 months in advance (M-3 decision point).
     This class values these options and provides exercise recommendations.
     """
     
@@ -65,21 +72,31 @@ class EmbeddedOptionAnalyzer:
         self.exercise_threshold = 0.75  # $0.75/MMBtu minimum option value
         self.demand_threshold = 0.50  # 50% minimum demand probability
         
-        # Optional cargo months (Jul-Dec 2026)
+        # CORRECTED: Optional cargo months (all Jan-Jun 2026)
+        # Contract structure:
+        # - 6 base cargoes (one per month Jan-Jun) - these are FIXED
+        # - Up to 5 ADDITIONAL optional cargoes with >3 month notice
+        # - Optional cargoes can be in ANY month (multiple per month allowed)
         self.optional_months = [
-            '2026-07', '2026-08', '2026-09', 
-            '2026-10', '2026-11', '2026-12'
+            '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06'
         ]
         
-        # M-2 decision points (2 months before delivery)
+        # M-3 decision points (3 months before delivery for optional cargoes)
+        # Must decide by M-3 to exercise option
         self.decision_points = {
-            '2026-07': '2026-05',  # May 2026: Decide on July cargo
-            '2026-08': '2026-06',  # June 2026: Decide on August cargo
-            '2026-09': '2026-07',  # July 2026: Decide on September cargo
-            '2026-10': '2026-08',  # August 2026: Decide on October cargo
-            '2026-11': '2026-09',  # September 2026: Decide on November cargo
-            '2026-12': '2026-10'   # October 2026: Decide on December cargo
+            '2026-01': '2025-10',  # Oct 2025: Decide on Jan optional cargo
+            '2026-02': '2025-11',  # Nov 2025: Decide on Feb optional cargo
+            '2026-03': '2025-12',  # Dec 2025: Decide on Mar optional cargo
+            '2026-04': '2026-01',  # Jan 2026: Decide on Apr optional cargo
+            '2026-05': '2026-02',  # Feb 2026: Decide on May optional cargo
+            '2026-06': '2026-03'   # Mar 2026: Decide on Jun optional cargo
         }
+        
+        self.max_options = 5  # Maximum 5 optional cargoes per contract
+        
+        # For comprehensive analysis, we evaluate multiple option scenarios per month
+        # (e.g., different destination/buyer combinations, different volumes)
+        self.options_per_month = 3  # Evaluate top 3 option scenarios per month
     
     def calculate_intrinsic_value(self, delivery_month: str, decision_date: str) -> Dict:
         """
@@ -95,10 +112,11 @@ class EmbeddedOptionAnalyzer:
             Dict with intrinsic value components
         """
         # Get forecasts for decision date and delivery month
-        hh_strike = self.forecasts['henry_hub'].get(decision_date, 0)
-        jkm_price = self.forecasts['jkm'].get(delivery_month, 0)
-        brent_price = self.forecasts['brent'].get(decision_date, 0)
-        freight_rate = self.forecasts['freight'].get(delivery_month, 0)
+        # For decision dates before our forecast period (Nov-Dec 2025), use earliest available forecast
+        hh_strike = self.forecasts['henry_hub'].get(decision_date, self.forecasts['henry_hub'].iloc[0])
+        jkm_price = self.forecasts['jkm'].get(delivery_month, self.forecasts['jkm'].iloc[0])
+        brent_price = self.forecasts['brent'].get(decision_date, self.forecasts['brent'].iloc[0])
+        freight_rate = self.forecasts['freight'].get(delivery_month, self.forecasts['freight'].iloc[0])
         
         # Calculate strike price (HH + tolling fee)
         strike_price = hh_strike + CARGO_CONTRACT['tolling_fee']
@@ -242,15 +260,134 @@ class EmbeddedOptionAnalyzer:
         
         return working_capital_cost
     
-    def evaluate_option(self, delivery_month: str) -> Dict:
+    def evaluate_all_option_scenarios_for_month(self, delivery_month: str) -> List[Dict]:
         """
-        Evaluate a single embedded option.
+        Evaluate ALL possible option scenarios (destination/buyer combinations) for a given month.
+        
+        This allows us to find the best N options across all months, with potentially
+        multiple options in the same profitable month.
         
         Args:
             delivery_month: Month of potential cargo delivery
             
         Returns:
-            Complete option evaluation
+            List of all option evaluations for this month, sorted by risk-adjusted value
+        """
+        decision_date = self.decision_points[delivery_month]
+        options = []
+        
+        # Evaluate every destination/buyer combination
+        for destination in BUYERS.keys():
+            for buyer in BUYERS[destination].keys():
+                option = self.evaluate_option_for_destination_buyer(
+                    delivery_month, decision_date, destination, buyer
+                )
+                if option is not None:
+                    options.append(option)
+        
+        # Sort by risk-adjusted value (descending)
+        options.sort(key=lambda x: x['risk_adjusted_value'], reverse=True)
+        
+        return options
+    
+    def evaluate_option_for_destination_buyer(
+        self, delivery_month: str, decision_date: str, destination: str, buyer: str
+    ) -> Dict:
+        """
+        Evaluate option for a specific destination/buyer combination.
+        
+        Args:
+            delivery_month: Month of potential cargo delivery
+            decision_date: M-3 decision date
+            destination: Target destination
+            buyer: Target buyer
+            
+        Returns:
+            Complete option evaluation or None if not profitable
+        """
+        # Get forecasts
+        hh_strike = self.forecasts['henry_hub'].get(decision_date, self.forecasts['henry_hub'].iloc[0])
+        jkm_price = self.forecasts['jkm'].get(delivery_month, self.forecasts['jkm'].iloc[0])
+        brent_price = self.forecasts['brent'].get(decision_date, self.forecasts['brent'].iloc[0])
+        freight_rate = self.forecasts['freight'].get(delivery_month, self.forecasts['freight'].iloc[0])
+        
+        # Calculate strike price
+        strike_price = hh_strike + CARGO_CONTRACT['tolling_fee']
+        
+        # Calculate expected sale price
+        buyer_info = BUYERS[destination][buyer]
+        sales_formula = SALES_FORMULAS[destination]
+        
+        if sales_formula['type'] == 'brent_based':
+            base_price = brent_price * 0.13  # Brent to LNG conversion
+            premium = buyer_info['premium']
+            terminal_tariff = 0.75  # Default for Singapore
+            sale_price = base_price + premium + terminal_tariff
+        else:  # jkm_based
+            sale_price = jkm_price + buyer_info['premium'] + sales_formula['berthing_cost']
+        
+        # Calculate costs
+        voyage_days = VOYAGE_DAYS[f'USGC_to_{destination}']
+        freight_cost = freight_rate * voyage_days / CARGO_CONTRACT['volume_mmbtu']
+        boiloff_loss = OPERATIONAL['boil_off_rate_per_day'] * voyage_days * sale_price  # Boil-off cost
+        
+        # Intrinsic value
+        intrinsic_value = max(sale_price - strike_price - freight_cost - boiloff_loss, 0)
+        
+        # If not profitable, skip
+        if intrinsic_value <= 0:
+            return None
+        
+        # Time value
+        time_result = self.calculate_time_value(delivery_month, decision_date, intrinsic_value)
+        
+        # Demand probability
+        demand_prob = self.calculate_demand_probability(delivery_month, destination)
+        
+        # Working capital cost
+        working_capital_cost = self.calculate_working_capital_cost(delivery_month)
+        
+        # Total option value
+        total_option_value = intrinsic_value + time_result['time_value']
+        risk_adjusted_value = total_option_value * demand_prob - working_capital_cost
+        
+        # Exercise decision
+        exercise_recommendation = self.make_exercise_decision(
+            total_option_value, demand_prob, risk_adjusted_value
+        )
+        
+        # Expected incremental P&L
+        cargo_volume = CARGO_CONTRACT['volume_mmbtu']
+        expected_incremental_pnl = risk_adjusted_value * cargo_volume / 1e6
+        
+        return {
+            'delivery_month': delivery_month,
+            'decision_date': decision_date,
+            'destination': destination,
+            'buyer': buyer,
+            'forecasted_hh_strike': hh_strike,
+            'expected_sale_price': sale_price,
+            'intrinsic_value_per_mmbtu': intrinsic_value,
+            'time_value_per_mmbtu': time_result['time_value'],
+            'total_option_value_per_mmbtu': total_option_value,
+            'demand_probability_pct': demand_prob * 100,
+            'risk_adjusted_value': risk_adjusted_value,
+            'exercise_recommendation': exercise_recommendation,
+            'expected_incremental_pnl_millions': expected_incremental_pnl,
+            'reasoning': self.generate_reasoning(total_option_value, demand_prob, risk_adjusted_value, exercise_recommendation),
+            'volatility': time_result['volatility'],
+            'working_capital_cost': working_capital_cost
+        }
+    
+    def evaluate_option(self, delivery_month: str) -> Dict:
+        """
+        Evaluate the BEST single embedded option for a month (legacy method).
+        
+        Args:
+            delivery_month: Month of potential cargo delivery
+            
+        Returns:
+            Best option evaluation for this month
         """
         decision_date = self.decision_points[delivery_month]
         
@@ -377,25 +514,71 @@ class EmbeddedOptionAnalyzer:
     
     def analyze_all_options(self) -> pd.DataFrame:
         """
-        Analyze all embedded options (Jul-Dec 2026).
+        Analyze all embedded options with comprehensive evaluation.
+        
+        Strategy:
+        1. Evaluate ALL destination/buyer combinations for ALL months
+        2. Rank ALL options by risk-adjusted value
+        3. Select TOP 5 options overall (can be multiple in same month)
+        4. Enforces maximum of 5 optional cargoes per contract terms
         
         Returns:
             DataFrame with all option evaluations
         """
-        logger.info("Analyzing embedded options for Jul-Dec 2026...")
+        logger.info(f"Analyzing embedded options for {self.optional_months[0]} to {self.optional_months[-1]}...")
+        logger.info(f"  Evaluating ALL destination/buyer combinations across all months...")
         
-        results = []
+        # Step 1: Generate ALL possible options across all months
+        all_options = []
         for month in self.optional_months:
-            logger.info(f"Evaluating option for {month}...")
-            result = self.evaluate_option(month)
-            results.append(result)
+            logger.info(f"  Evaluating all scenarios for {month}...")
+            month_options = self.evaluate_all_option_scenarios_for_month(month)
+            all_options.extend(month_options)
         
-        df = pd.DataFrame(results)
+        if not all_options:
+            logger.warning("  No profitable options found")
+            return pd.DataFrame()
         
-        # Add summary statistics
-        total_options = len(df)
-        options_to_exercise = len(df[df['exercise_recommendation'] == 'YES'])
-        total_uplift = df[df['exercise_recommendation'] == 'YES']['expected_incremental_pnl_millions'].sum()
+        # Step 2: Sort ALL options by risk-adjusted value
+        all_options.sort(key=lambda x: x['risk_adjusted_value'], reverse=True)
+        
+        logger.info(f"  Total profitable options evaluated: {len(all_options)}")
+        logger.info(f"  Top option: {all_options[0]['delivery_month']} to {all_options[0]['destination']} "
+                   f"({all_options[0]['buyer']}) = ${all_options[0]['expected_incremental_pnl_millions']:.1f}M")
+        
+        # Step 3: Select TOP 5 options overall
+        selected_options = []
+        for i, option in enumerate(all_options):
+            if len(selected_options) >= self.max_options:
+                # Update recommendation to NO for remaining options
+                option['exercise_recommendation'] = 'NO'
+                option['reasoning'] = f"Ranked #{i+1}, below top {self.max_options} options by value"
+            else:
+                # Keep original recommendation (should be YES for profitable options)
+                if option['risk_adjusted_value'] > 0:
+                    option['exercise_recommendation'] = 'YES'
+                    selected_options.append(option)
+        
+        # Create DataFrame
+        df = pd.DataFrame(all_options)
+        
+        # Calculate summary statistics
+        total_options_evaluated = len(df)
+        options_to_exercise = len(selected_options)
+        total_uplift = sum([opt['expected_incremental_pnl_millions'] for opt in selected_options])
+        
+        # Log exercise distribution by month
+        exercise_by_month = {}
+        for opt in selected_options:
+            month = opt['delivery_month']
+            exercise_by_month[month] = exercise_by_month.get(month, 0) + 1
+        
+        logger.info(f"\n  ✓ Selected {options_to_exercise}/{total_options_evaluated} options (max {self.max_options})")
+        logger.info(f"  Distribution by month:")
+        for month in self.optional_months:
+            count = exercise_by_month.get(month, 0)
+            if count > 0:
+                logger.info(f"    {month}: {count} option(s)")
         
         # Add summary row
         summary_row = {
@@ -410,17 +593,17 @@ class EmbeddedOptionAnalyzer:
             'total_option_value_per_mmbtu': 0,
             'demand_probability_pct': 0,
             'risk_adjusted_value': 0,
-            'exercise_recommendation': f'{options_to_exercise} of {total_options}',
+            'exercise_recommendation': f'{options_to_exercise} of {total_options_evaluated}',
             'expected_incremental_pnl_millions': total_uplift,
-            'reasoning': f'Total uplift: ${total_uplift:.1f}M from {options_to_exercise} options',
+            'reasoning': f'Total uplift: ${total_uplift:.1f}M from {options_to_exercise} options (max {self.max_options}, evaluated {total_options_evaluated} scenarios)',
             'volatility': 0,
             'working_capital_cost': 0
         }
         
         df = pd.concat([df, pd.DataFrame([summary_row])], ignore_index=True)
         
-        logger.info(f"Option analysis complete: {options_to_exercise}/{total_options} options recommended")
-        logger.info(f"Total expected uplift: ${total_uplift:.1f}M")
+        logger.info(f"\n  Option analysis complete: {options_to_exercise} options recommended (max {self.max_options})")
+        logger.info(f"  Total expected uplift: ${total_uplift:.1f}M")
         
         return df
     
