@@ -284,7 +284,8 @@ class CargoPnLCalculator:
         """
         volume = cargo_volume if cargo_volume is not None else self.cargo_volume
         
-        demand_pct = DEMAND_PROFILE[destination][month]
+        # Get monthly demand percentage from the case pack data
+        demand_pct = DEMAND_PROFILE.get(destination, {}).get('monthly_demand', {}).get(month, 1.0)
         
         # Probability of successful sale depends on demand and buyer quality
         if buyer_credit_rating in ['AA', 'A']:
@@ -318,7 +319,7 @@ class CargoPnLCalculator:
         Adjust for credit/counterparty risk.
         """
         default_prob = CREDIT_DEFAULT_PROBABILITY[buyer_credit_rating]
-        recovery_rate = CREDIT_RECOVERY_RATE
+        recovery_rate = CREDIT_RECOVERY_RATE[buyer_credit_rating]
         
         # Expected loss = Exposure × (1 - Recovery) × Default Probability
         expected_loss = gross_revenue * (1 - recovery_rate) * default_prob
