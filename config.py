@@ -571,6 +571,135 @@ VOYAGE_DAYS = {
     'USGC_to_China': 52
 }
 
+# Freight Rate Scaling Factors (route-specific adjustments to BLNG 1)
+# Used as proxy for distance differences between routes
+FREIGHT_SCALING_FACTORS = {
+    'USGC_to_Singapore': 0.9,   # Shorter route - scale down
+    'USGC_to_Japan': 1.0,        # Baseline BLNG 1
+    'USGC_to_China': 1.05        # Longer route - scale up
+}
+
+# ============================================================================
+# COMPREHENSIVE SHIPPING COST COMPONENTS
+# ============================================================================
+# Sources and assumptions documented for each component
+
+# 1. Insurance Costs
+# Source: bplan.ai - LNG carrier insurance premiums range $250k-$1M per year
+# Source: financialmodelexcel.com - Annual premiums for large LNG carriers
+INSURANCE_COSTS = {
+    'annual_premium': 650000,  # USD per year (mid-range estimate)
+    'per_voyage': 54167,       # USD per voyage (annual / 12 months)
+    'per_mmbtu': 0.016,        # USD per MMBtu (per_voyage / 3.4M MMBtu)
+    'components': {
+        'hull_and_machinery': 0.40,  # 40% of total premium
+        'protection_indemnity': 0.35,  # 35% of total premium
+        'war_risk': 0.15,              # 15% of total premium
+        'cargo_insurance': 0.10        # 10% of total premium
+    },
+    'source': 'https://bplan.ai/blogs/running-expenses/lng-liquefied-natural-gas-shipping-and-transportation-running-expenses'
+}
+
+# 2. Brokerage Costs
+# Source: Industry standard for shipping brokerage is 1.25% of freight value
+# This is the commission paid to ship brokers for arranging the charter
+BROKERAGE_COSTS = {
+    'rate': 0.0125,  # 1.25% of freight cost
+    'description': 'Ship brokerage commission for charter arrangement',
+    'source': 'Industry standard for maritime brokerage services',
+    'note': 'Applied as percentage of base freight cost'
+}
+
+# 3. Working Capital Costs
+# Source: Commodity trading working capital typically financed at SOFR + spread
+# Current rates around 5-7% annually for short-term trade finance
+WORKING_CAPITAL = {
+    'annual_rate': 0.06,  # 6% per annum
+    'description': 'Cost of capital tied up in voyage duration',
+    'calculation': 'cargo_value × rate × (voyage_days / 365)',
+    'source': 'Industry standard commodity trade finance rates 2024-2025',
+    'note': 'Applied to total cargo purchase cost during voyage period'
+}
+
+# 4. Carbon Costs (Port/Region Specific)
+# Source: EU ETS, IMO regulations, regional carbon pricing
+# Source: mdpi.com - EU Fit for 55, waytronsc.com - IMO 2020 sulfur cap
+CARBON_COSTS = {
+    'EU_ETS_rate': 85.0,  # EUR per ton CO2 (2024-2025 estimate)
+    'emissions_per_day': 50,  # Tons CO2 per day (typical LNG carrier)
+    'by_destination': {
+        'Singapore': {
+            'rate_per_day': 1500,  # USD per day (lower due to limited regulation)
+            'total_voyage_cost': lambda days: 1500 * days,
+            'description': 'Limited carbon regulations in Singapore',
+            'source': 'Regional carbon pricing estimates 2024'
+        },
+        'Japan': {
+            'rate_per_day': 2500,  # USD per day (moderate regulation)
+            'total_voyage_cost': lambda days: 2500 * days,
+            'description': 'Japan carbon pricing mechanism',
+            'source': 'Japan carbon tax and emissions regulations'
+        },
+        'China': {
+            'rate_per_day': 2000,  # USD per day (growing regulation)
+            'total_voyage_cost': lambda days: 2000 * days,
+            'description': 'China ETS and environmental regulations',
+            'source': 'China national carbon trading scheme'
+        }
+    },
+    'note': 'Carbon costs vary by route due to different regulatory frameworks',
+    'sources': [
+        'https://www.mdpi.com/2077-1312/10/7/946',
+        'https://www.waytronsc.com/sys-nd/678.html'
+    ]
+}
+
+# 5. Demurrage Costs
+# Source: waytronsc.com, timera-energy.com - Can exceed $100k per day for LNG carriers
+DEMURRAGE_COSTS = {
+    'rate_per_day': 125000,  # USD per day
+    'laytime_loading': 36,   # Hours allowed for loading (1.5 days)
+    'laytime_discharge': 36, # Hours allowed for discharge (1.5 days)
+    'probability_delay': 0.15,  # 15% probability of delay
+    'expected_delay_hours': 12,  # Expected delay if it occurs (hours)
+    'expected_cost': 125000 * (12/24) * 0.15,  # Expected value of demurrage
+    'description': 'Charges for delays beyond agreed laytime',
+    'source': 'https://www.waytronsc.com/sys-nd/678.html',
+    'note': 'Applied probabilistically in risk calculations'
+}
+
+# 6. Letter of Credit (LC) Costs
+# Source: Standard international trade finance fees
+# Typical range 0.1-0.5% of transaction value
+LC_COSTS = {
+    'rate': 0.003,  # 0.3% of transaction value (mid-range)
+    'minimum_fee': 5000,  # USD minimum fee
+    'tenor_days': 90,  # Typical LC tenor for LNG trades
+    'description': 'Bank fees for LC issuance and confirmation',
+    'components': {
+        'issuance_fee': 0.0015,  # 0.15% - issuing bank
+        'confirmation_fee': 0.0010,  # 0.10% - confirming bank
+        'negotiation_fee': 0.0005   # 0.05% - negotiating bank
+    },
+    'source': 'Standard international trade finance rates 2024',
+    'note': 'Applied to total sale value of cargo'
+}
+
+# Summary of Additional Shipping Costs
+SHIPPING_COST_SUMMARY = {
+    'components': [
+        'base_freight',      # Baltic LNG rate × voyage days × scaling factor
+        'insurance',         # Per voyage insurance premium
+        'brokerage',         # 1.25% of freight cost
+        'working_capital',   # Interest on capital during voyage
+        'carbon',           # Region-specific carbon costs
+        'demurrage_risk',   # Expected value of demurrage
+        'lc_cost'           # Letter of credit fees
+    ],
+    'total_formula': 'SUM(all components)',
+    'allocation': 'All costs allocated per MMBtu of cargo'
+}
+
 # Operational Assumptions
 OPERATIONAL = {
     'boil_off_rate_per_day': 0.0015,  # 0.15% per day (industry standard)

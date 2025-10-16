@@ -16,9 +16,11 @@ from scipy import stats
 
 # Import from existing modules
 from config import (
-    CARGO_CONTRACT, VOYAGE_DAYS, OPERATIONAL, SALES_FORMULAS,
+    CARGO_CONTRACT, VOYAGE_DAYS, FREIGHT_SCALING_FACTORS, OPERATIONAL, SALES_FORMULAS,
     BUYERS, CREDIT_DEFAULT_PROBABILITY, CREDIT_RECOVERY_RATE,
-    DEMAND_PROFILE, MONTE_CARLO_CARGO_CONFIG, CARGO_SCENARIOS
+    DEMAND_PROFILE, MONTE_CARLO_CARGO_CONFIG, CARGO_SCENARIOS,
+    INSURANCE_COSTS, BROKERAGE_COSTS, WORKING_CAPITAL, CARBON_COSTS,
+    DEMURRAGE_COSTS, LC_COSTS
 )
 
 logger = logging.getLogger(__name__)
@@ -103,27 +105,113 @@ class CargoPnLCalculator:
     def calculate_freight_cost(
         self,
         destination: str,
-        freight_rate: float
+        freight_rate: float,
+        purchase_cost: float = None,
+        sale_value: float = None
     ) -> Dict:
         """
-        Calculate freight cost.
+        Calculate comprehensive freight and shipping costs.
         
-        freight_rate is $/day for vessel charter (from Baltic LNG data)
-        Total cost = rate × voyage days
+        Includes:
+        1. Base freight (Baltic LNG rate × voyage days × route scaling)
+        2. Insurance costs (per voyage premium)
+        3. Brokerage costs (1.25% of base freight)
+        4. Working capital costs (interest on capital during voyage)
+        5. Carbon costs (destination-specific)
+        6. Demurrage risk (expected value)
+        7. Letter of Credit costs (percentage of sale value)
+        
+        Route scaling factors (proxy for distance differences):
+        - Singapore: 0.9 (shorter route)
+        - Japan: 1.0 (baseline BLNG 1)
+        - China: 1.05 (longer route)
+        
+        Sources documented in config.py for each component
         """
-        voyage_days = VOYAGE_DAYS[f'USGC_to_{destination}']
+        route_key = f'USGC_to_{destination}'
+        voyage_days = VOYAGE_DAYS[route_key]
         
+        # Apply route-specific scaling factor
+        scaling_factor = FREIGHT_SCALING_FACTORS.get(route_key, 1.0)
+        
+        # 1. Base Freight Cost
         # Baltic rate is $/day for vessel charter
-        # Total freight = $/day × days
-        total_freight_cost = freight_rate * voyage_days
+        # Total freight = $/day × days × scaling factor
+        base_freight = freight_rate * voyage_days * scaling_factor
+        
+        # 2. Insurance Cost
+        # Per-voyage insurance premium
+        insurance_cost = INSURANCE_COSTS['per_voyage']
+        
+        # 3. Brokerage Cost
+        # 1.25% of base freight for ship broker commission
+        brokerage_cost = base_freight * BROKERAGE_COSTS['rate']
+        
+        # 4. Working Capital Cost
+        # Interest on capital tied up during voyage
+        if purchase_cost is not None:
+            working_capital_cost = purchase_cost * WORKING_CAPITAL['annual_rate'] * (voyage_days / 365)
+        else:
+            # Use estimated cargo value if not provided
+            estimated_value = self.cargo_volume * 10  # Assume $10/MMBtu
+            working_capital_cost = estimated_value * WORKING_CAPITAL['annual_rate'] * (voyage_days / 365)
+        
+        # 5. Carbon Cost
+        # Destination-specific carbon costs based on regional regulations
+        carbon_cost_per_day = CARBON_COSTS['by_destination'][destination]['rate_per_day']
+        carbon_cost = carbon_cost_per_day * voyage_days
+        
+        # 6. Demurrage Cost (Expected Value)
+        # Probabilistic cost of potential delays
+        demurrage_expected = DEMURRAGE_COSTS['expected_cost']
+        
+        # 7. Letter of Credit Cost
+        # Applied to sale value (if provided)
+        if sale_value is not None:
+            lc_cost = max(sale_value * LC_COSTS['rate'], LC_COSTS['minimum_fee'])
+        else:
+            lc_cost = LC_COSTS['minimum_fee']  # Use minimum if sale value not provided
+        
+        # Total Freight and Shipping Costs
+        total_freight_cost = (
+            base_freight +
+            insurance_cost +
+            brokerage_cost +
+            working_capital_cost +
+            carbon_cost +
+            demurrage_expected +
+            lc_cost
+        )
         
         # Per MMBtu equivalent
         freight_per_mmbtu = total_freight_cost / self.cargo_volume
+        base_freight_per_mmbtu = base_freight / self.cargo_volume
         
         return {
-            'freight_per_mmbtu': freight_per_mmbtu,
             'voyage_days': voyage_days,
-            'total_freight_cost': total_freight_cost
+            'scaling_factor': scaling_factor,
+            
+            # Component costs (total)
+            'base_freight': base_freight,
+            'insurance_cost': insurance_cost,
+            'brokerage_cost': brokerage_cost,
+            'working_capital_cost': working_capital_cost,
+            'carbon_cost': carbon_cost,
+            'demurrage_expected': demurrage_expected,
+            'lc_cost': lc_cost,
+            
+            # Component costs (per MMBtu)
+            'base_freight_per_mmbtu': base_freight_per_mmbtu,
+            'insurance_per_mmbtu': insurance_cost / self.cargo_volume,
+            'brokerage_per_mmbtu': brokerage_cost / self.cargo_volume,
+            'working_capital_per_mmbtu': working_capital_cost / self.cargo_volume,
+            'carbon_per_mmbtu': carbon_cost / self.cargo_volume,
+            'demurrage_per_mmbtu': demurrage_expected / self.cargo_volume,
+            'lc_per_mmbtu': lc_cost / self.cargo_volume,
+            
+            # Totals
+            'total_freight_cost': total_freight_cost,
+            'freight_per_mmbtu': freight_per_mmbtu
         }
     
     def calculate_boil_off_opportunity_cost(
@@ -236,8 +324,13 @@ class CargoPnLCalculator:
             destination, buyer, brent_price, jkm_price, jkm_price_next_month, month
         )
         
-        # Step 3: Freight cost
-        freight = self.calculate_freight_cost(destination, freight_rate)
+        # Step 3: Freight cost (comprehensive including all shipping costs)
+        freight = self.calculate_freight_cost(
+            destination, 
+            freight_rate,
+            purchase_cost=purchase['total_cost'],
+            sale_value=sale['total_revenue']
+        )
         
         # Step 4: Boil-off opportunity cost (already in sale calculation, but track separately)
         boil_off = self.calculate_boil_off_opportunity_cost(destination, sale['sale_price_per_mmbtu'])
