@@ -840,8 +840,40 @@ class StrategyOptimizer:
         options.append(cancel_result)
         
         # Options 2-N: Each destination + buyer combination WITH volume optimization
+        # DECISION DATE for constraint checking (October 18, 2025)
+        DECISION_DATE = pd.to_datetime('2025-10-18')
+        
         for destination in BUYERS.keys():
             for buyer in BUYERS[destination].keys():
+                
+                # =================================================================
+                # THOR CONSTRAINT ENFORCEMENT
+                # =================================================================
+                # Thor requires 3-6 months advance booking (buyer-specific constraint)
+                # 
+                # Calculation:
+                #   Decision Date: October 18, 2025
+                #   Jan 2026: Loading ~Jan 15, 2026 (mid-month typical)
+                #   Lead time: Oct 18 → Jan 15 = ~2.9 months
+                #   
+                # Result: Jan 2026 is too soon for Thor (< 3 months minimum)
+                # 
+                # Therefore: EXCLUDE Thor from January 2026 base cargo
+                # =================================================================
+                if buyer == 'Thor':
+                    cargo_month_dt = pd.to_datetime(month)
+                    
+                    # Calculate months between decision and cargo loading
+                    # Assume cargo loads mid-month (day 15)
+                    cargo_load_date = cargo_month_dt.replace(day=15)
+                    months_ahead = (cargo_load_date.year - DECISION_DATE.year) * 12 + \
+                                   (cargo_load_date.month - DECISION_DATE.month) + \
+                                   (cargo_load_date.day - DECISION_DATE.day) / 30.0
+                    
+                    # Thor requires minimum 3 months notice
+                    if months_ahead < 3.0:
+                        logger.info(f"  [CONSTRAINT] Excluding Thor from {month}: {months_ahead:.1f} months < 3.0-month minimum (Thor requires 3-6 months advance booking)")
+                        continue  # Skip this buyer for this month
                 
                 if optimize_volume and self.volume_flex_enabled:
                     # OPTIMIZE VOLUME: Try 90%, 100%, 110% and pick best

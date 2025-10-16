@@ -229,6 +229,102 @@ def load_brent_data() -> pd.DataFrame:
         raise
 
 
+def load_wti_data() -> pd.DataFrame:
+    """
+    Load WTI oil historical and forward data.
+    
+    Returns:
+        DataFrame with DatetimeIndex and columns ['WTI_Historical', 'WTI_Forward']
+    """
+    logger.info("Loading WTI data...")
+    
+    try:
+        # Load historical (complex format - similar to Henry Hub)
+        hist_file = DATA_DIR / "WTI Historical (Extracted 23Sep25).xlsx"
+        hist_raw = pd.read_excel(hist_file, header=None)
+        
+        # Find the row with "Exchange Date" header
+        header_row = None
+        for i, row in hist_raw.iterrows():
+            # Check if this row contains "Exchange Date"
+            if any('Exchange Date' in str(val) for val in row.values if pd.notna(val)):
+                header_row = i
+                break
+        
+        if header_row is None:
+            raise ValueError("Could not find 'Exchange Date' header in WTI Historical")
+        
+        # Read from header row
+        hist = pd.read_excel(hist_file, skiprows=header_row)
+        hist = hist.rename(columns={'Exchange Date': 'Date', 'Close': 'Price'})
+        hist['Date'] = pd.to_datetime(hist['Date'], errors='coerce')
+        hist = hist[['Date', 'Price']].dropna()
+        hist = hist.set_index('Date').sort_index()
+        hist = hist.rename(columns={'Price': 'WTI_Historical'})
+        
+        logger.info(f"  WTI Historical: {len(hist)} rows from {hist.index[0].date()} to {hist.index[-1].date()}")
+        
+        # Load forward curve (similar format to Henry Hub)
+        fwd_file = DATA_DIR / "WTI Forward (Extracted 23Sep25).xlsx"
+        fwd = pd.read_excel(fwd_file)
+        fwd = fwd.rename(columns={'Close': 'Price'})
+        
+        # Parse contract names to extract dates
+        # Format: "2005-11-01" (already dates) or contract month names
+        def parse_contract_month(name):
+            """Extract date from contract name or date string"""
+            try:
+                # Try direct date parsing first
+                if pd.notna(name):
+                    return pd.to_datetime(name)
+                return None
+            except:
+                # Try month abbreviation extraction (similar to Henry Hub)
+                try:
+                    match = re.search(r'([A-Z]{3})(\d{2})', str(name))
+                    if match:
+                        month_abbr = match.group(1)
+                        year_2digit = match.group(2)
+                        
+                        month_map = {
+                            'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+                            'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+                        }
+                        month_num = month_map[month_abbr]
+                        year = 2000 + int(year_2digit)
+                        
+                        return pd.Timestamp(year=year, month=month_num, day=1)
+                except:
+                    pass
+                return None
+        
+        # Try to parse Month column as dates
+        if 'Month' in fwd.columns:
+            fwd['Date'] = fwd['Month'].apply(parse_contract_month)
+        elif 'Name' in fwd.columns:
+            fwd['Date'] = fwd['Name'].apply(parse_contract_month)
+        else:
+            # Use first column
+            fwd['Date'] = fwd[fwd.columns[0]].apply(parse_contract_month)
+        
+        fwd = fwd[['Date', 'Price']].dropna()
+        fwd = fwd.set_index('Date').sort_index()
+        fwd = fwd.rename(columns={'Price': 'WTI_Forward'})
+        
+        logger.info(f"  WTI Forward: {len(fwd)} contracts from {fwd.index[0].strftime('%Y-%m')} to {fwd.index[-1].strftime('%Y-%m')}")
+        
+        # Combine (outer join to keep all dates)
+        combined = pd.concat([hist, fwd], axis=1)
+        
+        logger.info(f"  Combined: {len(combined)} rows")
+        
+        return combined
+        
+    except Exception as e:
+        logger.error(f"Error loading WTI data: {e}")
+        raise
+
+
 def load_freight_data() -> pd.DataFrame:
     """
     Load Baltic LNG freight data and convert to monthly averages.
@@ -401,7 +497,7 @@ def load_all_data() -> dict:
     Load all competition data files.
     
     Returns:
-        Dict with keys: 'henry_hub', 'jkm', 'brent', 'freight', 'fx'
+        Dict with keys: 'henry_hub', 'jkm', 'brent', 'wti', 'freight', 'fx'
         Each value is a DataFrame with DatetimeIndex
     """
     logger.info("="*80)
@@ -414,6 +510,7 @@ def load_all_data() -> dict:
         data['henry_hub'] = load_henry_hub_data()
         data['jkm'] = load_jkm_data()
         data['brent'] = load_brent_data()
+        data['wti'] = load_wti_data()
         data['freight'] = load_freight_data()
         data['fx'] = load_fx_data()
         

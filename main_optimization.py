@@ -125,18 +125,13 @@ def prepare_forecasts_hybrid(data: dict) -> Dict[str, pd.Series]:
     """
     Hybrid forecasting approach:
     - Henry Hub & JKM: Forward curves (best available, market-based)
-    - Brent: ARIMA+GARCH (no forward curve, sophisticated modeling)
+    - Brent: WTI Forward + Brent-WTI spread (market-based with stable relationship)
     - Freight: Naive average (data quality issues make modeling unreliable)
     
     Returns:
         Dict with keys ['henry_hub', 'jkm', 'brent', 'freight']
         Each value is pd.Series indexed by month string ('2026-01', etc.)
     """
-    from models.forecasting import (
-        test_stationarity, 
-        fit_arima_model, fit_garch_model, generate_simple_forecast
-    )
-    from config import ARIMA_CONFIG, GARCH_CONFIG
     
     logger.info("="*80)
     logger.info("PREPARING HYBRID FORECASTS")
@@ -170,40 +165,67 @@ def prepare_forecasts_hybrid(data: dict) -> Dict[str, pd.Series]:
     forecasts['jkm'] = pd.Series(jkm_forecast_dict, name='jkm')
     logger.info(f"   Range: ${forecasts['jkm'].min():.2f} - ${forecasts['jkm'].max():.2f}/MMBtu")
     
-    # 3. BRENT: ARIMA+GARCH
-    logger.info("\n3. Brent: Using ARIMA+GARCH...")
-    brent_data = data['brent']['Brent'].dropna()
-    brent_monthly = brent_data.resample('M').last().dropna()
+    # 3. BRENT: WTI-based forecast (Recent WTI + Brent-WTI Spread)
+    logger.info("\n3. Brent: Using recent WTI + historical Brent-WTI spread...")
+    logger.info("   Rationale: Stable Brent-WTI relationship + recent price level")
     
     try:
-        # Test stationarity
-        stationarity_result = test_stationarity(brent_monthly, name='brent')
-        d_order = stationarity_result.get('recommended_d', 1)  # Default to 1 if not found
+        # Get historical Brent and WTI data
+        brent_data = data['brent']['Brent'].dropna()
+        wti_data = data['wti']['WTI_Historical'].dropna()
+        wti_fwd = data['wti']['WTI_Forward'].dropna() if 'WTI_Forward' in data['wti'].columns else None
         
-        # Fit ARIMA
-        arima_model, arima_info = fit_arima_model(
-            brent_monthly, 
-            d=d_order, 
-            max_p=3, 
-            max_q=3,
-            market_name='brent'
-        )
+        # Check if WTI forward curve is actually forward-looking (dates > 2025)
+        use_wti_forward = False
+        if wti_fwd is not None and len(wti_fwd) > 0:
+            latest_wti_fwd_date = wti_fwd.index.max()
+            if latest_wti_fwd_date >= pd.Timestamp('2025-01-01'):
+                use_wti_forward = True
+                logger.info(f"   ✓ WTI forward curve available through {latest_wti_fwd_date.strftime('%Y-%m')}")
+            else:
+                logger.warning(f"   ⚠️ WTI Forward data is historical (max date: {latest_wti_fwd_date.strftime('%Y-%m')})")
+                logger.info("   → Using recent WTI spot price instead")
         
-        if arima_model is None or arima_info.get('error'):
-            raise ValueError(f"ARIMA fitting failed: {arima_info.get('error', 'Unknown error')}")
+        # Calculate historical Brent-WTI spread (recent 6 months for stability)
+        combined = pd.concat([brent_data, wti_data], axis=1, join='inner')
+        combined.columns = ['Brent', 'WTI']
+        combined['Spread'] = combined['Brent'] - combined['WTI']
         
-        # Generate ARIMA forecasts
-        arima_forecast_df = generate_simple_forecast(arima_model, horizon=7, confidence_level=0.95)
+        # Use recent 6-month average spread (more stable than single point)
+        recent_spread = combined['Spread'].iloc[-180:].mean()  # Last ~6 months
+        spread_std = combined['Spread'].iloc[-180:].std()
+        recent_wti = wti_data.iloc[-1]  # Latest WTI spot price
         
-        # Use point forecasts (mean column)
-        brent_forecast_values = arima_forecast_df['forecast'].values
-        brent_forecast_dict = {month.strftime('%Y-%m'): val for month, val in zip(months, brent_forecast_values)}
+        logger.info(f"   Historical Brent-WTI spread (6-month avg): ${recent_spread:.2f}/bbl")
+        logger.info(f"   Spread volatility (std dev): ${spread_std:.2f}/bbl")
+        logger.info(f"   Latest WTI spot price: ${recent_wti:.2f}/bbl")
+        
+        # Generate Brent forecasts
+        brent_forecast_dict = {}
+        for month in months:
+            if use_wti_forward:
+                # Use WTI forward + spread
+                wti_price = wti_fwd.asof(month)
+                if pd.isna(wti_price):
+                    wti_price = wti_fwd.iloc[-1]
+            else:
+                # Use recent WTI spot + spread (simple but reasonable)
+                wti_price = recent_wti
+            
+            # Add spread to get Brent forecast
+            brent_forecast = wti_price + recent_spread
+            brent_forecast_dict[month.strftime('%Y-%m')] = brent_forecast
+        
         forecasts['brent'] = pd.Series(brent_forecast_dict, name='brent')
-        logger.info(f"   ✓ ARIMA forecasts generated: ${forecasts['brent'].min():.2f} - ${forecasts['brent'].max():.2f}/bbl")
+        logger.info(f"   ✓ Brent forecasts: ${forecasts['brent'].min():.2f} - ${forecasts['brent'].max():.2f}/bbl")
+        if use_wti_forward:
+            logger.info(f"   ✓ Using WTI forward curve (market-based)")
+        else:
+            logger.info(f"   ✓ Using recent WTI spot (constant) + spread")
         
     except Exception as e:
-        logger.warning(f"   ⚠️ ARIMA+GARCH failed for Brent: {e}")
-        logger.info("   Falling back to naive forecast (latest value)...")
+        logger.warning(f"   ⚠️ WTI-based approach failed for Brent: {e}")
+        logger.info("   Falling back to naive forecast (latest Brent value)...")
         brent_latest = brent_data.iloc[-1]
         brent_forecast_dict = {month.strftime('%Y-%m'): brent_latest for month in months}
         forecasts['brent'] = pd.Series(brent_forecast_dict, name='brent')
@@ -1079,7 +1101,7 @@ def main(run_monte_carlo: bool = True, run_scenarios: bool = True, use_arima_gar
         
         if use_arima_garch and CARGO_ARIMA_GARCH_CONFIG['enabled']:
             logger.info("Using hybrid forecasting: Forward curves (HH/JKM) + ARIMA+GARCH (Brent) + Naive (Freight)")
-            forecasts = prepare_forecasts_hybrid(data)
+            forecasts = prepare_forecasts_arima_garch(data)
         else:
             logger.info("Using simple forecasting (forward curves + naive methods)...")
             forecasts = prepare_forecasts_simple(data)

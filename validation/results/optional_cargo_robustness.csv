@@ -1,0 +1,7 @@
+Scenario,Total_Value,Month_Overlap,Exact_Overlap,Selection
+Base Forecast,122.82215416098738,4,4,"2026-03/Singapore, 2026-03/Singapore, 2026-06/Japan, 2026-05/Japan, 2026-04/Japan"
+JKM +10%,139.8034597359874,4,4,"2026-03/Singapore, 2026-03/Singapore, 2026-06/Japan, 2026-05/Japan, 2026-04/Japan"
+JKM -10%,106.46656773545565,3,3,"2026-03/Singapore, 2026-03/Singapore, 2026-06/Japan, 2026-06/Singapore, 2026-05/Japan"
+Brent +10%,122.82215416098738,4,4,"2026-03/Singapore, 2026-03/Singapore, 2026-06/Japan, 2026-05/Japan, 2026-04/Japan"
+Brent -10%,122.82215416098738,4,4,"2026-03/Singapore, 2026-03/Singapore, 2026-06/Japan, 2026-05/Japan, 2026-04/Japan"
+HH +10%,118.72359766098737,4,4,"2026-03/Singapore, 2026-03/Singapore, 2026-06/Japan, 2026-05/Japan, 2026-04/Japan"

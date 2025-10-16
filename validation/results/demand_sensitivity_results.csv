@@ -1,0 +1,6 @@
+,Total_PnL_M,Adjustments_Range
+Base Case (Current),143.09451031118058,-2.0 to 1.0
+Conservative (Less Discount),147.3680103111806,-1.5 to 0.75
+Aggressive (More Discount),138.0216676100411,-2.5 to 1.5
+No Adjustment (Neutral),157.3395103111806,0.0 to 0.0
+Extreme Bear (Max Discount),130.8991676100411,-3.5 to 0.0
