@@ -1,0 +1,59 @@
+# Data files
+data/raw/*.xlsx
+data/raw/*.csv
+data/raw/*.xls
+data/processed/*
+!data/processed/.gitkeep
+
+# Output files
+outputs/models/*
+outputs/results/*
+outputs/figures/*
+outputs/submission/*
+outputs/diagnostics/*
+!outputs/**/.gitkeep
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
