@@ -166,6 +166,62 @@ BUYERS = {
 }
 
 # =============================================================================
+# BUYER CREDIT RATINGS
+# =============================================================================
+
+BUYER_CREDIT_RATINGS = {
+    'Iron_Man': 'AA',      # Highest credit quality
+    'Thor': 'AA',          # Highest credit quality
+    'Hawk_Eye': 'A',       # Strong credit quality
+    'QuickSilver': 'BBB'   # Good credit quality
+}
+
+# =============================================================================
+# BUYER DEMAND PROBABILITIES (from case pack page 17)
+# =============================================================================
+
+BUYER_DEMAND_PROBABILITIES = {
+    'Iron_Man': 0.75,      # 75% probability of taking delivery
+    'Thor': 0.70,          # 70% probability
+    'Hawk_Eye': 0.65,      # 65% probability
+    'QuickSilver': 0.60    # 60% probability
+}
+
+# =============================================================================
+# PAYMENT TERMS
+# =============================================================================
+
+PAYMENT_TERMS = {
+    'Singapore': 'immediate',  # T+0
+    'Japan': 'immediate',      # T+0
+    'China': '30_days'         # T+30
+}
+
+# =============================================================================
+# BUYER SELECTION SCORING WEIGHTS
+# =============================================================================
+
+BUYER_SELECTION_WEIGHTS = {
+    'margin': 0.50,        # 50% - Expected margin is most important
+    'credit': 0.25,        # 25% - Credit risk is significant
+    'demand': 0.15,        # 15% - Demand confidence matters
+    'payment': 0.10        # 10% - Payment terms have modest impact
+}
+
+# Credit rating scores (0-100 scale)
+CREDIT_SCORES = {
+    'AA': 100,   # 0% penalty
+    'A': 95,     # 5% penalty
+    'BBB': 85,   # 15% penalty
+    'BB': 70,    # 30% penalty
+    'B': 50,     # 50% penalty
+    'CCC': 30    # 70% penalty
+}
+
+# Risk-free rate for NPV calculations
+RISK_FREE_RATE = 0.05  # 5% annual rate
+
+# =============================================================================
 # CREDIT DEFAULT PROBABILITY
 # =============================================================================
 
