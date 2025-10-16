@@ -120,6 +120,109 @@ def prepare_forecasts_simple(data: dict) -> Dict[str, pd.Series]:
     return forecasts
 
 
+def prepare_forecasts_hybrid(data: dict) -> Dict[str, pd.Series]:
+    """
+    Hybrid forecasting approach:
+    - Henry Hub & JKM: Forward curves (best available, market-based)
+    - Brent: ARIMA+GARCH (no forward curve, sophisticated modeling)
+    - Freight: Naive average (data quality issues make modeling unreliable)
+    
+    Returns:
+        Dict with keys ['henry_hub', 'jkm', 'brent', 'freight']
+        Each value is pd.Series indexed by month string ('2026-01', etc.)
+    """
+    from models.forecasting import (
+        test_stationarity, 
+        fit_arima_model, fit_garch_model, generate_simple_forecast
+    )
+    from config import ARIMA_CONFIG, GARCH_CONFIG
+    
+    logger.info("="*80)
+    logger.info("PREPARING HYBRID FORECASTS")
+    logger.info("="*80)
+    
+    # Months we need forecasts for
+    months = pd.date_range('2026-01', '2026-07', freq='MS')
+    forecasts = {}
+    
+    # 1. HENRY HUB: Forward curve
+    logger.info("\n1. Henry Hub: Using forward curve...")
+    hh_fwd = data['henry_hub']['HH_Forward'].dropna()
+    hh_forecast_dict = {}
+    for month in months:
+        closest_val = hh_fwd.asof(month)
+        if pd.isna(closest_val):
+            closest_val = hh_fwd.iloc[-1]
+        hh_forecast_dict[month.strftime('%Y-%m')] = closest_val
+    forecasts['henry_hub'] = pd.Series(hh_forecast_dict, name='henry_hub')
+    logger.info(f"   Range: ${forecasts['henry_hub'].min():.2f} - ${forecasts['henry_hub'].max():.2f}/MMBtu")
+    
+    # 2. JKM: Forward curve
+    logger.info("\n2. JKM: Using forward curve...")
+    jkm_fwd = data['jkm']['JKM_Forward'].dropna()
+    jkm_forecast_dict = {}
+    for month in months:
+        closest_val = jkm_fwd.asof(month)
+        if pd.isna(closest_val):
+            closest_val = jkm_fwd.iloc[-1]
+        jkm_forecast_dict[month.strftime('%Y-%m')] = closest_val
+    forecasts['jkm'] = pd.Series(jkm_forecast_dict, name='jkm')
+    logger.info(f"   Range: ${forecasts['jkm'].min():.2f} - ${forecasts['jkm'].max():.2f}/MMBtu")
+    
+    # 3. BRENT: ARIMA+GARCH
+    logger.info("\n3. Brent: Using ARIMA+GARCH...")
+    brent_data = data['brent']['Brent'].dropna()
+    brent_monthly = brent_data.resample('M').last().dropna()
+    
+    try:
+        # Test stationarity
+        stationarity_result = test_stationarity(brent_monthly, name='brent')
+        d_order = stationarity_result.get('recommended_d', 1)  # Default to 1 if not found
+        
+        # Fit ARIMA
+        arima_model, arima_info = fit_arima_model(
+            brent_monthly, 
+            d=d_order, 
+            max_p=3, 
+            max_q=3,
+            market_name='brent'
+        )
+        
+        if arima_model is None or arima_info.get('error'):
+            raise ValueError(f"ARIMA fitting failed: {arima_info.get('error', 'Unknown error')}")
+        
+        # Generate ARIMA forecasts
+        arima_forecast_df = generate_simple_forecast(arima_model, horizon=7, confidence_level=0.95)
+        
+        # Use point forecasts (mean column)
+        brent_forecast_values = arima_forecast_df['forecast'].values
+        brent_forecast_dict = {month.strftime('%Y-%m'): val for month, val in zip(months, brent_forecast_values)}
+        forecasts['brent'] = pd.Series(brent_forecast_dict, name='brent')
+        logger.info(f"   ✓ ARIMA forecasts generated: ${forecasts['brent'].min():.2f} - ${forecasts['brent'].max():.2f}/bbl")
+        
+    except Exception as e:
+        logger.warning(f"   ⚠️ ARIMA+GARCH failed for Brent: {e}")
+        logger.info("   Falling back to naive forecast (latest value)...")
+        brent_latest = brent_data.iloc[-1]
+        brent_forecast_dict = {month.strftime('%Y-%m'): brent_latest for month in months}
+        forecasts['brent'] = pd.Series(brent_forecast_dict, name='brent')
+        logger.info(f"   Fallback: ${brent_latest:.2f}/bbl (constant)")
+    
+    # 4. FREIGHT: Naive (recent average)
+    logger.info("\n4. Freight: Using naive forecast (recent average)...")
+    freight_recent = data['freight']['Freight'].iloc[-10:].mean()  # Last 10 months
+    freight_forecast_dict = {month.strftime('%Y-%m'): freight_recent for month in months}
+    forecasts['freight'] = pd.Series(freight_forecast_dict, name='freight')
+    logger.info(f"   Average: ${freight_recent:.0f}/day (constant)")
+    logger.info("   Rationale: Freight data quality issues - naive approach most reliable")
+    
+    logger.info("\n" + "="*80)
+    logger.info("HYBRID FORECAST PREPARATION COMPLETE")
+    logger.info("="*80)
+    
+    return forecasts
+
+
 def prepare_forecasts_arima_garch(data: dict) -> Dict[str, pd.Series]:
     """
     Prepare price forecasts using ARIMA+GARCH for Brent and Freight,
@@ -945,10 +1048,14 @@ def main(run_monte_carlo: bool = True, run_scenarios: bool = True, use_arima_gar
         logger.info("="*80)
         
         # Choose forecasting method based on configuration
+        # FORECASTING STRATEGY:
+        # - Henry Hub & JKM: Forward curves (market-based, most accurate)
+        # - Brent: ARIMA+GARCH if enabled, otherwise naive
+        # - Freight: Naive (recent average) - data quality issues make modeling unreliable
+        
         if use_arima_garch and CARGO_ARIMA_GARCH_CONFIG['enabled']:
-            logger.info("Using ARIMA+GARCH for Brent and Freight forecasting...")
-            # Use simple forecasts for now - ARIMA+GARCH has integration bugs
-            forecasts = prepare_forecasts_simple(data)
+            logger.info("Using hybrid forecasting: Forward curves (HH/JKM) + ARIMA+GARCH (Brent) + Naive (Freight)")
+            forecasts = prepare_forecasts_hybrid(data)
         else:
             logger.info("Using simple forecasting (forward curves + naive methods)...")
             forecasts = prepare_forecasts_simple(data)
