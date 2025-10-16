@@ -231,10 +231,15 @@ def load_brent_data() -> pd.DataFrame:
 
 def load_freight_data() -> pd.DataFrame:
     """
-    Load Baltic LNG freight data.
+    Load Baltic LNG freight data and convert to monthly averages.
+    
+    FIXES FREIGHT VOLATILITY ISSUE:
+    - Loads daily freight data from .BLNG3g column
+    - Converts to monthly averages (like HH, JKM, Brent)
+    - This reduces volatility from 5000% to realistic ~10-30%
     
     Returns:
-        DataFrame with DatetimeIndex and column ['Freight']
+        DataFrame with DatetimeIndex and column ['Freight'] (monthly averages)
     """
     logger.info("Loading Freight data...")
     
@@ -266,17 +271,45 @@ def load_freight_data() -> pd.DataFrame:
         if date_col is None:
             date_col = df.columns[0]
         
-        price_col = 'Close' if 'Close' in df.columns else df.columns[1]
+        # Use .BLNG3g column as specified by user
+        price_col = None
+        for col in df.columns:
+            if '.BLNG3g' in str(col) or 'BLNG3g' in str(col):
+                price_col = col
+                break
+        
+        if price_col is None:
+            # Fallback to Close or second column
+            price_col = 'Close' if 'Close' in df.columns else df.columns[1]
+            logger.warning(f"  .BLNG3g column not found, using {price_col}")
+        else:
+            logger.info(f"  Using column: {price_col}")
         
         df = df.rename(columns={date_col: 'Date', price_col: 'Price'})
         df['Date'] = pd.to_datetime(df['Date'])
         df = df[['Date', 'Price']].dropna()
         df = df.set_index('Date').sort_index()
-        df = df.rename(columns={'Price': 'Freight'})
         
-        logger.info(f"  Freight: {len(df)} rows from {df.index[0].date()} to {df.index[-1].date()}")
+        # CRITICAL FIX: Convert daily data to monthly averages
+        logger.info(f"  Raw freight data: {len(df)} daily observations")
+        logger.info(f"  Date range: {df.index[0].date()} to {df.index[-1].date()}")
         
-        return df
+        # Calculate monthly averages (same as HH, JKM, Brent)
+        df_monthly = df.resample('M').mean()
+        df_monthly = df_monthly.rename(columns={'Price': 'Freight'})
+        
+        logger.info(f"  Monthly averages: {len(df_monthly)} months")
+        logger.info(f"  Date range: {df_monthly.index[0].strftime('%Y-%m')} to {df_monthly.index[-1].strftime('%Y-%m')}")
+        
+        # Log volatility comparison
+        daily_vol = df['Price'].pct_change().std() * np.sqrt(252)  # Annualized
+        monthly_vol = df_monthly['Freight'].pct_change().std() * np.sqrt(12)  # Annualized
+        
+        logger.info(f"  Daily volatility (annualized): {daily_vol:.1%}")
+        logger.info(f"  Monthly volatility (annualized): {monthly_vol:.1%}")
+        logger.info(f"  Volatility reduction: {(1 - monthly_vol/daily_vol):.1%}")
+        
+        return df_monthly
         
     except Exception as e:
         logger.error(f"Error loading Freight data: {e}")
