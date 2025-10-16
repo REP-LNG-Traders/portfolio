@@ -21,7 +21,7 @@ from config import (
     DEMAND_PROFILE, MONTE_CARLO_CARGO_CONFIG, CARGO_SCENARIOS,
     INSURANCE_COSTS, BROKERAGE_COSTS, WORKING_CAPITAL, CARBON_COSTS,
     DEMURRAGE_COSTS, LC_COSTS,
-    HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG
+    HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG, SALES_CONTRACT, DEMAND_PRICING_MODEL
 )
 
 logger = logging.getLogger(__name__)
@@ -116,18 +116,33 @@ class CargoPnLCalculator:
         # Actual delivered volume (after boil-off)
         voyage_days = VOYAGE_DAYS[f'USGC_to_{destination}']
         boil_off_rate = OPERATIONAL['boil_off_rate_per_day']
-        volume_lost = volume * boil_off_rate * voyage_days
-        delivered_volume = volume - volume_lost
+        volume_lost_boiloff = volume * boil_off_rate * voyage_days
+        arrival_volume = volume - volume_lost_boiloff
         
-        total_revenue = sale_price_per_mmbtu * delivered_volume
+        # CRITICAL: Sales contract has DIFFERENT volume limit than purchase!
+        # Sales contract: 3.7M ±10% = 3.33M to 4.07M
+        # Must cap sales at contract maximum
+        if SALES_CONTRACT['enabled']:
+            max_sales_volume = SALES_CONTRACT['max_volume_mmbtu']
+            sales_volume = min(arrival_volume, max_sales_volume)
+            stranded_volume = max(0, arrival_volume - max_sales_volume)
+        else:
+            # No sales constraint (old behavior)
+            sales_volume = arrival_volume
+            stranded_volume = 0
+        
+        total_revenue = sale_price_per_mmbtu * sales_volume
         
         return {
             'sale_price_per_mmbtu': sale_price_per_mmbtu,
-            'delivered_volume': delivered_volume,
-            'volume_lost_boiloff': volume_lost,
+            'arrival_volume': arrival_volume,  # Volume arriving at port
+            'sales_volume': sales_volume,  # Volume actually sold (capped)
+            'delivered_volume': sales_volume,  # Alias for backward compatibility
+            'volume_lost_boiloff': volume_lost_boiloff,
+            'stranded_volume': stranded_volume,  # Paid for but can't sell
             'total_revenue': total_revenue,
             'buyer_credit_rating': buyer_info['credit_rating'],
-            'cargo_volume': volume  # NEW: Track actual volume used
+            'cargo_volume': volume  # Purchase volume
         }
     
     def calculate_freight_cost(
@@ -280,39 +295,118 @@ class CargoPnLCalculator:
         buyer_credit_rating: str,
         month: str,
         base_pnl: float,
-        cargo_volume: float = None  # NEW: Optional volume override
+        cargo_volume: float = None,
+        sale_price_per_mmbtu: float = None  # NEW: For price adjustment model
     ) -> Dict:
         """
         Adjust P&L for demand conditions.
         
-        Logic: Low demand = harder to sell = lower effective price
+        NEW MODEL (Recommended by user):
+        ================================
+        Sales are forward contracts (M-1 nomination locks in sale).
+        Demand % affects PRICING POWER, not sale probability.
+        
+        - Low demand → Competitive market → Must discount price
+        - High demand → Tight market → Can charge premium
+        
+        This is more realistic than probability model because:
+        1. Wouldn't lift cargo with 13% sale probability (economically irrational)
+        2. M-1 nomination = contracted sale (not contingent)
+        3. Matches industry practice (forward contracts, not spot gambling)
+        
+        OLD MODEL (Probability):
+        expected_pnl = base_pnl × probability
+        Problem: Implies lifting cargo with 13% chance = disaster scenario
+        
+        NEW MODEL (Price Adjustment):
+        adjusted_price = base_price + market_adjustment
+        expected_pnl = (adjusted_price × volume) - costs - credit_risk
+        Benefit: Sale is certain, demand affects achievable pricing
         """
         volume = cargo_volume if cargo_volume is not None else self.cargo_volume
         
         # Get monthly demand percentage from the case pack data
         demand_pct = DEMAND_PROFILE.get(destination, {}).get('monthly_demand', {}).get(month, 1.0)
         
-        # Probability of successful sale depends on demand and buyer quality
-        if buyer_credit_rating in ['AA', 'A']:
-            # High-quality buyers can always find supply
-            prob_sale = min(demand_pct * 1.3, 1.0)
-        elif buyer_credit_rating in ['BBB', 'BB']:
-            prob_sale = demand_pct
-        else:  # B, CCC
-            # Low-quality buyers struggle in tight markets
-            prob_sale = demand_pct * 0.7
+        # Choose modeling approach
+        if DEMAND_PRICING_MODEL.get('enabled', False):
+            # ================================================================
+            # NEW APPROACH: PRICE ADJUSTMENT (Forward Contracting)
+            # ================================================================
+            # Demand % affects negotiating power and achievable pricing
+            
+            # Determine price adjustment based on demand level
+            adjustments = DEMAND_PRICING_MODEL['adjustments']
+            
+            if demand_pct < adjustments['very_low']['threshold']:  # <20%
+                price_adj = adjustments['very_low']['adjustment']
+                market_desc = 'Very tight market - steep discount required'
+            elif demand_pct < adjustments['low']['threshold']:  # 20-40%
+                price_adj = adjustments['low']['adjustment']
+                market_desc = 'Tight market - moderate discount'
+            elif demand_pct < adjustments['moderate']['threshold']:  # 40-60%
+                price_adj = adjustments['moderate']['adjustment']
+                market_desc = 'Balanced market - slight discount'
+            elif demand_pct < adjustments['high']['threshold']:  # 60-80%
+                price_adj = 0.00
+                market_desc = 'Good market - base pricing'
+            else:  # >80%
+                price_adj = adjustments['very_high']['adjustment']
+                market_desc = 'Hot market - premium pricing'
+            
+            # Apply price adjustment to revenue
+            if sale_price_per_mmbtu is not None:
+                # Calculate revenue impact of price adjustment
+                delivered_volume = volume * (1 - OPERATIONAL['boil_off_rate_per_day'] * 
+                                            VOYAGE_DAYS[f'USGC_to_{destination}'])
+                # Cap at sales max
+                if SALES_CONTRACT['enabled']:
+                    delivered_volume = min(delivered_volume, SALES_CONTRACT['max_volume_mmbtu'])
+                
+                pricing_impact = delivered_volume * price_adj
+                demand_adjusted_pnl = base_pnl + pricing_impact
+            else:
+                # Fallback if price not provided
+                demand_adjusted_pnl = base_pnl
+            
+            return {
+                'demand_percentage': demand_pct,
+                'probability_of_sale': 1.0,  # Sale is CERTAIN (contracted)
+                'price_adjustment_per_mmbtu': price_adj,
+                'pricing_impact': pricing_impact if sale_price_per_mmbtu else 0,
+                'market_description': market_desc,
+                'base_pnl': base_pnl,
+                'demand_adjusted_pnl': demand_adjusted_pnl,
+                'demand_risk_cost': base_pnl - demand_adjusted_pnl,
+                'model_type': 'price_adjustment'
+            }
         
-        # If can't sell, assume we store (cost $0.05/MMBtu/month) or cancel
-        storage_cost_per_month = OPERATIONAL['storage_cost_per_mmbtu_per_month']
-        expected_pnl = base_pnl * prob_sale + (-volume * storage_cost_per_month) * (1 - prob_sale)
-        
-        return {
-            'demand_percentage': demand_pct,
-            'probability_of_sale': prob_sale,
-            'base_pnl': base_pnl,
-            'demand_adjusted_pnl': expected_pnl,
-            'demand_risk_cost': base_pnl - expected_pnl
-        }
+        else:
+            # ================================================================
+            # OLD APPROACH: PROBABILITY (Spot Market / Conservative)
+            # ================================================================
+            # Probability of successful sale depends on demand and buyer quality
+            if buyer_credit_rating in ['AA', 'A']:
+                # High-quality buyers can always find supply
+                prob_sale = min(demand_pct * 1.3, 1.0)
+            elif buyer_credit_rating in ['BBB', 'BB']:
+                prob_sale = demand_pct
+            else:  # B, CCC
+                # Low-quality buyers struggle in tight markets
+                prob_sale = demand_pct * 0.7
+            
+            # If can't sell, assume we store (cost $0.05/MMBtu/month) or cancel
+            storage_cost_per_month = OPERATIONAL['storage_cost_per_mmbtu_per_month']
+            expected_pnl = base_pnl * prob_sale + (-volume * storage_cost_per_month) * (1 - prob_sale)
+            
+            return {
+                'demand_percentage': demand_pct,
+                'probability_of_sale': prob_sale,
+                'base_pnl': base_pnl,
+                'demand_adjusted_pnl': expected_pnl,
+                'demand_risk_cost': base_pnl - expected_pnl,
+                'model_type': 'probability'
+            }
     
     def apply_credit_risk_adjustment(
         self,
@@ -394,8 +488,17 @@ class CargoPnLCalculator:
         # Step 4: Boil-off opportunity cost (already in sale calculation, but track separately)
         boil_off = self.calculate_boil_off_opportunity_cost(destination, sale['sale_price_per_mmbtu'], volume)
         
+        # Step 4b: Stranded volume cost (paid for volume we can't sell)
+        # This happens when arrival volume > sales contract maximum
+        stranded_volume = sale.get('stranded_volume', 0)
+        if stranded_volume > 0:
+            purchase_cost_per_mmbtu = purchase['price_per_mmbtu']
+            stranded_cost = stranded_volume * purchase_cost_per_mmbtu
+        else:
+            stranded_cost = 0
+        
         # Step 5: Gross P&L before adjustments
-        gross_pnl = sale['total_revenue'] - purchase['total_cost'] - freight['total_freight_cost']
+        gross_pnl = sale['total_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - stranded_cost
         
         # Step 6: Credit risk adjustment
         credit_adj = self.apply_credit_risk_adjustment(
@@ -405,15 +508,16 @@ class CargoPnLCalculator:
         )
         
         # Recalculate P&L with credit adjustment
-        pnl_after_credit = credit_adj['credit_adjusted_revenue'] - purchase['total_cost'] - freight['total_freight_cost']
+        pnl_after_credit = credit_adj['credit_adjusted_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - stranded_cost
         
-        # Step 7: Demand adjustment
+        # Step 7: Demand adjustment (with price for new model)
         demand_adj = self.apply_demand_adjustment(
             destination,
             sale['buyer_credit_rating'],
             month,
             pnl_after_credit,
-            volume
+            volume,
+            sale_price_per_mmbtu=sale['sale_price_per_mmbtu']  # For price adjustment model
         )
         
         # Final expected P&L
@@ -435,11 +539,15 @@ class CargoPnLCalculator:
             # Volume (NEW: Track actual volume used)
             'cargo_volume': volume,
             'volume_pct': volume / self.cargo_volume,  # As % of base (90%, 100%, 110%)
+            'arrival_volume': sale['arrival_volume'],
+            'sales_volume': sale['sales_volume'],
+            'stranded_volume': sale['stranded_volume'],
             
             # Components
             'purchase_cost': purchase['total_cost'],
             'sale_revenue_gross': sale['total_revenue'],
             'freight_cost': freight['total_freight_cost'],
+            'stranded_cost': stranded_cost,
             'gross_pnl': gross_pnl,
             
             # Adjustments
@@ -636,11 +744,30 @@ class StrategyOptimizer:
         next_month_dt = month_dt + pd.DateOffset(months=1)
         next_month_str = next_month_dt.strftime('%Y-%m')
         
-        # Test all three volume levels
+        # Calculate effective maximum purchase based on SALES CONTRACT constraint
+        # arrival_volume = purchase × (1 - boiloff_pct)
+        # For arrival ≤ sales_max: purchase ≤ sales_max / (1 - boiloff_pct)
+        if SALES_CONTRACT['enabled']:
+            voyage_days = VOYAGE_DAYS[f'USGC_to_{destination}']
+            boiloff_pct = OPERATIONAL['boil_off_rate_per_day'] * voyage_days
+            sales_max = SALES_CONTRACT['max_volume_mmbtu']
+            
+            # Effective purchase max to avoid stranded volume
+            effective_purchase_max = sales_max / (1 - boiloff_pct)
+            
+            # Use most restrictive constraint
+            actual_max = min(
+                VOLUME_FLEXIBILITY_CONFIG['max_volume_mmbtu'],
+                effective_purchase_max
+            )
+        else:
+            actual_max = VOLUME_FLEXIBILITY_CONFIG['max_volume_mmbtu']
+        
+        # Test all three volume levels (using constrained maximum)
         volumes_to_test = [
             VOLUME_FLEXIBILITY_CONFIG['min_volume_mmbtu'],  # 90%
             VOLUME_FLEXIBILITY_CONFIG['base_volume_mmbtu'], # 100%
-            VOLUME_FLEXIBILITY_CONFIG['max_volume_mmbtu']   # 110%
+            actual_max  # Constrained maximum (accounts for sales cap)
         ]
         
         volume_results = []
@@ -669,12 +796,20 @@ class StrategyOptimizer:
         best_volume_result = max(volume_results, key=lambda x: x['expected_pnl'])
         optimal_volume = best_volume_result['volume']
         
+        # Build rationale including sales constraint if applicable
+        rationale = f"Selected {optimal_volume/1e6:.2f}M MMBtu ({optimal_volume/self.calculator.cargo_volume:.0%} of base) to maximize expected P&L"
+        if SALES_CONTRACT['enabled'] and actual_max < VOLUME_FLEXIBILITY_CONFIG['max_volume_mmbtu']:
+            constraint_pct = actual_max / self.calculator.cargo_volume
+            rationale += f" (sales contract limits to {constraint_pct:.1%})"
+        
         return optimal_volume, {
             'method': 'maximize_expected_pnl',
             'volumes_tested': volume_results,
             'selected_volume': optimal_volume,
             'selected_volume_pct': optimal_volume / self.calculator.cargo_volume,
-            'rationale': f"Selected {optimal_volume/1e6:.2f}M MMBtu ({optimal_volume/self.calculator.cargo_volume:.0%} of base) to maximize expected P&L"
+            'effective_max_purchase': actual_max if SALES_CONTRACT['enabled'] else VOLUME_FLEXIBILITY_CONFIG['max_volume_mmbtu'],
+            'sales_constrained': SALES_CONTRACT['enabled'] and actual_max < VOLUME_FLEXIBILITY_CONFIG['max_volume_mmbtu'],
+            'rationale': rationale
         }
     
     def evaluate_all_options_for_month(

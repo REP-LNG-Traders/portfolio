@@ -71,12 +71,12 @@ MARKETS = ['Singapore', 'China', 'Japan']
 # =============================================================================
 
 CARGO_CONTRACT = {
-    'volume_mmbtu': 3_800_000,  # Base cargo size
+    'volume_mmbtu': 3_800_000,  # Base cargo size (PURCHASE contract)
     'delivery_period': ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06'],
     'nomination_deadline': 'M-2',  # Must nominate by M-2
     'loading_window': 'M',  # Load in month M
     'delivery_window': 'M+1',  # Deliver in month M+1
-    'tolling_fee': 2.50,  # $2.50/MMBtu tolling fee (from contract terms)
+    'tolling_fee': 1.50,  # $1.50/MMBtu tolling fee (from contract terms - CORRECTED)
     'decision_timeline': {
         '2026-01': '2025-11',  # November 2025: Decide on January 2026 cargo
         '2026-02': '2025-12',  # December 2025: Decide on February 2026 cargo
@@ -95,9 +95,9 @@ OPERATIONAL = {
     'boil_off_rate_per_day': 0.0005,  # 0.05% per day
     'storage_cost_per_mmbtu_per_month': 0.05,  # $0.05/MMBtu/month
     'voyage_days': {
-        'USGC_to_Singapore': 25,
-        'USGC_to_Japan': 20,
-        'USGC_to_China': 22
+        'USGC_to_Singapore': 48,  # 47.92 days from case materials (2025 data)
+        'USGC_to_Japan': 41,      # 41.45 days from case materials (2025 data)
+        'USGC_to_China': 52       # 51.79 days from case materials (2025 data)
     }
 }
 
@@ -160,9 +160,9 @@ def periods_to_days(periods: int, frequency: str) -> int:
 # =============================================================================
 
 VOYAGE_DAYS = {
-    'USGC_to_Singapore': 25,
-    'USGC_to_Japan': 20,
-    'USGC_to_China': 22
+    'USGC_to_Singapore': 48,  # 47.92 days from case materials (2025 data)
+    'USGC_to_Japan': 41,      # 41.45 days from case materials (2025 data)
+    'USGC_to_China': 52       # 51.79 days from case materials (2025 data)
 }
 
 # =============================================================================

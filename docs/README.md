@@ -1,5 +1,7 @@
 # LNG Cargo Trading Optimization System
 
+Declaration: All of this code was written in Cursor with the help of AI and LLMs. Claude was also used in the ideation process
+
 Portfolio optimization of LNG Trading using ARIMA, GARCH, and cargo routing optimization with Monte Carlo risk analysis.
 
 ---

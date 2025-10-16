@@ -36,16 +36,19 @@
 - **Implementation**: All months optimized to 110% volume based on margin analysis
 
 ### Cargo Specifications
-- **Standard Size**: 165,000 cubic meters (typical LNG carrier)
+- **Base Size**: 3,800,000 MMBtu per cargo
 - **Boil-off Rate**: 0.05%/day (modern LNG carrier standard)
-- **Volume Delivered**: 165,000 × 0.9995^voyage_days cubic meters
+- **Volume Delivered**: 
+  - Singapore: 3,800,000 × (1 - 0.0005 × 48) = 3,708,800 MMBtu (2.40% loss)
+  - Japan: 3,800,000 × (1 - 0.0005 × 41) = 3,722,100 MMBtu (2.05% loss)
+  - China: 3,800,000 × (1 - 0.0005 × 52) = 3,701,200 MMBtu (2.60% loss)
 
 ## Voyage Economics
 
-### Voyage Times
-- **USGC to Singapore**: 25 days
-- **USGC to Japan**: 20 days  
-- **USGC to China**: 22 days
+### Voyage Times (from case materials - 2025 data)
+- **USGC to Singapore**: 48 days (47.92 days actual)
+- **USGC to Japan**: 41 days (41.45 days actual)
+- **USGC to China**: 52 days (51.79 days actual)
 
 ### Freight Cost Components
 1. **Base Freight**: Baltic LNG rates (with outlier capping)
@@ -102,12 +105,24 @@
 2. **Fixed Buyer Relationships**: No competitive bidding
 3. **No Liquidity Constraints**: Assumes market depth for all volumes
 4. **No Market Impact**: Model doesn't affect market prices
+5. **Unlimited Terminal Capacity**: No discharge scheduling or berth availability constraints
+   - Assumes Singapore (SLNG), Japan, and China terminals can handle any cargo schedule
+   - No 3-day discharge window conflicts modeled
+   - Realistic for competition purposes given diversified destination portfolio
 
 ### Scope Limitations
 1. **FX Risk**: Not modeled (USD assumption)
 2. **Credit Risk**: Simplified probability adjustments
 3. **Operational Risk**: Limited to demurrage modeling
 4. **Regulatory Risk**: Not considered
+
+### Decision Timing Constraints (NEW - October 16, 2025)
+1. **M-2 Nomination Deadline**: Base cargoes must be nominated 2 months before loading
+2. **M-3 Option Deadline**: Optional cargoes require 3 months advance notice
+3. **Buyer-Specific Constraints**: Thor requires 3-6 months advance booking
+4. **Hedging Price Proxy**: Uses delivery month forward curve as proxy for M-2 forward price
+   - Conservative assumption (flat forward curve from M-2 to delivery)
+   - Perfect implementation would require historical forward curve snapshots
 
 ## Validation Results
 

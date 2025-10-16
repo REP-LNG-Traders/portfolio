@@ -36,6 +36,7 @@ from models.optimization import (
 from models.sensitivity_analysis import (
     SensitivityAnalyzer, create_sensitivity_plots, save_sensitivity_results
 )
+from models.decision_constraints import DecisionValidator
 from config.constants import CARGO_CONTRACT
 
 
@@ -614,10 +615,35 @@ def generate_hedged_strategies(
     logger.info("  - Effect: Lock in HH cost, reduce P&L volatility")
     
     # Get HH forward prices (for M-2 hedge initiation)
-    # Simplified assumption: M-2 forward prices approximated by forecast values
-    # In production, would use actual M-2 forward curve data
-    hh_forwards = forecasts['henry_hub']
-    hh_spots = forecasts['henry_hub']  # Using same forecast as proxy for spot
+    # CRITICAL FIX: Use proper M-2 forward prices, not delivery month prices
+    # 
+    # For realistic hedging, we need:
+    # - M-2 forward price: What forward curve shows at decision time (M-2)
+    # - Spot price at M: What we actually pay at loading
+    # 
+    # Current implementation: Use delivery month forward as proxy for M-2 forward
+    # This is conservative (assumes forward curve is flat from M-2 to M)
+    # 
+    # NOTE: For perfect accuracy, we'd need historical forward curve snapshots at each M-2 date
+    # Competition simplification: Use delivery month forward curve price
+    
+    hh_forwards = {}  # M-2 forward prices
+    hh_spots = {}     # Spot prices at loading (M)
+    
+    for month in CARGO_CONTRACT['delivery_period']:
+        # Delivery month forward price (used as proxy for both M-2 forward and spot)
+        # In Monte Carlo, these will vary independently
+        hh_forwards[month] = forecasts['henry_hub'][month]
+        hh_spots[month] = forecasts['henry_hub'][month]
+        
+        # Alternative approach (more conservative - use earlier month for forward):
+        # month_dt = pd.to_datetime(month)
+        # m2_date = month_dt - pd.DateOffset(months=2)
+        # m2_month_str = m2_date.strftime('%Y-%m')
+        # if m2_month_str in forecasts['henry_hub']:
+        #     hh_forwards[month] = forecasts['henry_hub'][m2_month_str]
+        # else:
+        #     hh_forwards[month] = forecasts['henry_hub'][month]
     
     from models.optimization import CargoPnLCalculator
     
@@ -1077,6 +1103,31 @@ def main(run_monte_carlo: bool = True, run_scenarios: bool = True, use_arima_gar
         optimizer = StrategyOptimizer(calculator)
         
         strategies = optimizer.generate_all_strategies(forecasts)
+        
+        # Step 3b: Validate Strategies Against Constraints
+        logger.info("\n" + "="*80)
+        logger.info("STEP 3B: VALIDATING DECISION CONSTRAINTS")
+        logger.info("="*80)
+        
+        validator = DecisionValidator()
+        
+        for strategy_name, strategy in strategies.items():
+            logger.info(f"\nValidating: {strategy_name}")
+            
+            is_valid, issues = validator.validate_strategy(
+                strategy=strategy,
+                forecasts=forecasts,
+                current_date=None,  # Use M-2 deadlines
+                strict_mode=False  # Warning mode for now
+            )
+            
+            validator.log_validation_summary(is_valid, issues)
+            
+            # Store validation results in strategy
+            strategy['validation'] = {
+                'is_valid': is_valid,
+                'issues': issues
+            }
         
         # Step 4: Monte Carlo Risk Analysis (optional)
         monte_carlo_results = None

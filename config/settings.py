@@ -32,14 +32,46 @@ RESAMPLE_METHOD = 'mean'
 
 VOLUME_FLEXIBILITY_CONFIG = {
     'enabled': True,
-    'base_volume_mmbtu': 3_800_000,
+    'base_volume_mmbtu': 3_800_000,  # PURCHASE contract base
     'tolerance_pct': 0.10,
-    'min_volume_mmbtu': 3_420_000,  # 90%
-    'max_volume_mmbtu': 4_180_000,  # 110%
+    'min_volume_mmbtu': 3_420_000,  # 90% of purchase
+    'max_volume_mmbtu': 4_180_000,  # 110% of purchase
     'optimization_method': 'margin_based',
     'margin_thresholds': {
         'high_margin_min': 5.0,
         'low_margin_max': 2.0
+    }
+}
+
+# =============================================================================
+# SALES CONTRACT CONFIGURATION (SEPARATE FROM PURCHASE!)
+# =============================================================================
+
+SALES_CONTRACT = {
+    'enabled': True,
+    'base_volume_mmbtu': 3_700_000,  # SALES contract base (100k less than purchase)
+    'tolerance_pct': 0.10,
+    'min_volume_mmbtu': 3_330_000,  # 90% of sales
+    'max_volume_mmbtu': 4_070_000,  # 110% of sales
+    'stranded_volume_treatment': 'opportunity_cost',  # Paid for but can't sell
+}
+
+# =============================================================================
+# DEMAND PRICING ADJUSTMENT CONFIGURATION
+# =============================================================================
+
+DEMAND_PRICING_MODEL = {
+    'enabled': True,  # Use price adjustment instead of probability
+    'model_type': 'price_adjustment',  # vs 'probability' (old approach)
+    'rationale': 'Sales are forward contracts (M-1 nomination). Demand % affects negotiating position and achievable pricing, not binary sale probability.',
+    
+    # Price adjustments by demand level ($/MMBtu)
+    'adjustments': {
+        'very_low': {'threshold': 0.20, 'adjustment': -2.00},   # <20% demand: Strong discount
+        'low': {'threshold': 0.40, 'adjustment': -1.00},        # 20-40%: Moderate discount
+        'moderate': {'threshold': 0.60, 'adjustment': -0.25},   # 40-60%: Slight discount
+        'high': {'threshold': 0.80, 'adjustment': 0.00},        # 60-80%: Market pricing
+        'very_high': {'threshold': 1.00, 'adjustment': +1.00},  # >80%: Scarcity premium
     }
 }
 
