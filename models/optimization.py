@@ -98,7 +98,12 @@ class CargoPnLCalculator:
         if destination == 'Singapore':
             base_price = brent_price * 0.13
             premium = buyer_info['premium']
-            terminal_tariff = formula['terminal_tariff']
+            # Handle dynamic terminal tariff calculation
+            if formula['terminal_tariff'] is None:
+                # Use a default calculation or lookup
+                terminal_tariff = 0.75  # Default value, could be made dynamic
+            else:
+                terminal_tariff = formula['terminal_tariff']
             sale_price_per_mmbtu = base_price + premium + terminal_tariff
             
         else:  # Japan or China

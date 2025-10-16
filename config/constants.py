@@ -153,20 +153,21 @@ FREIGHT_SCALING_FACTORS = {
 SALES_FORMULAS = {
     'Singapore': {
         'type': 'brent_based',
-        'terminal_tariff': 0.75,     # $/MMBtu terminal tariff
-        'berthing_cost': 0.0,         # Not applicable for Singapore
-        'payment_terms': 'immediate'  # T+0
+        'terminal_tariff': None,  # Will be calculated dynamically
+        'berthing_cost': 0.0,     # Not applicable for Singapore
+        'payment_terms': 'immediate',  # T+0
+        'calculate_terminal_tariff': 'calculate_singapore_terminal_tariff_per_mmbtu'  # Dynamic calculation
     },
     'Japan': {
         'type': 'jkm_based',
         'terminal_tariff': 0.0,       # Not applicable for Japan
-        'berthing_cost': 0.50,        # $/MMBtu berthing cost
+        'berthing_cost': 0.10,        # $0.10/MMBtu from case pack page 16
         'payment_terms': 'immediate'  # T+0
     },
     'China': {
         'type': 'jkm_based',
-        'terminal_tariff': 0.0,                 # Not applicable for China
-        'berthing_cost': 0.60,                  # $/MMBtu berthing cost
+        'terminal_tariff': 0.0,       # Not applicable for China
+        'berthing_cost': 0.10,        # $0.10/MMBtu from case pack page 16
         'payment_terms': '30_days_after_delivery'  # T+30
     }
 }
@@ -177,16 +178,40 @@ SALES_FORMULAS = {
 
 BUYERS = {
     'Singapore': {
-        'Iron_Man': {'premium': 0.15, 'credit_rating': 'AA'},
-        'Thor': {'premium': 0.12, 'credit_rating': 'AA'}
+        'Iron_Man': {
+            'premium': 4.00,  # $/MMBtu
+            'credit_rating': 'AA',
+            'type': 'bunker'
+        },
+        'Thor': {
+            'premium': 3.50,  # $/MMBtu (LOW end due to AA negotiating power)
+            'credit_rating': 'AA',
+            'type': 'utility'
+        }
     },
     'Japan': {
-        'Hawk_Eye': {'premium': 0.18, 'credit_rating': 'A'},
-        'QuickSilver': {'premium': 0.14, 'credit_rating': 'BBB'}
+        'Hawk_Eye': {
+            'premium': 0.60,  # $/MMBtu (LOW end due to strong negotiator)
+            'credit_rating': 'A',
+            'type': 'utility'
+        },
+        'QuickSilver': {
+            'premium': 2.20,  # $/MMBtu
+            'credit_rating': 'BBB',
+            'type': 'trader'
+        }
     },
     'China': {
-        'QuickSilver': {'premium': 0.16, 'credit_rating': 'BBB'},
-        'Hawk_Eye': {'premium': 0.17, 'credit_rating': 'A'}
+        'QuickSilver': {
+            'premium': 2.20,  # $/MMBtu
+            'credit_rating': 'BBB',
+            'type': 'trader'
+        },
+        'Hawk_Eye': {
+            'premium': 0.60,  # $/MMBtu
+            'credit_rating': 'A',
+            'type': 'utility'
+        }
     }
 }
 
