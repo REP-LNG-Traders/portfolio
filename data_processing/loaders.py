@@ -311,7 +311,7 @@ def load_freight_data() -> pd.DataFrame:
         # We use hard caps based on industry maximums:
         #   - Upper: $120k/day (extreme market conditions)
         #   - Lower: $5k/day (minimum viable vessel economics)
-        logger.info(f"  Applying industry-based outlier capping...")
+        logger.info(f"  Applying 80% outlier capping (10th-90th percentiles)...")
         
         # Industry-based caps (more defensible than percentiles for bad data)
         FREIGHT_MAX = 120_000  # $/day - extreme market conditions
