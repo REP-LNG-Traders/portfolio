@@ -576,7 +576,7 @@ def generate_hedged_strategies(
     """
     Generate hedged versions of strategies using HH futures.
     
-    HEDGING APPROACH (documented for judges):
+    HEDGING APPROACH:
     ========================================
     
     For each cargo in the strategy:
@@ -1110,7 +1110,7 @@ def main(run_monte_carlo: bool = True, run_scenarios: bool = True, use_arima_gar
                 # CRITICAL: For hedged strategies, HH volatility should be near-zero
                 # because we've locked in the price with futures at M-2
                 # 
-                # REASONING (for judges):
+                # REASONING:
                 # - Hedging with 100% ratio eliminates HH price risk
                 # - Monte Carlo should reflect this: HH vol = 0 (or very small residual)
                 # - Other commodities (JKM, Brent, Freight) remain at full volatility

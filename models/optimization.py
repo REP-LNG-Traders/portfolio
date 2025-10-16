@@ -492,7 +492,7 @@ class CargoPnLCalculator:
         """
         Calculate cargo P&L WITH Henry Hub hedging.
         
-        KEY CONCEPT (for judges):
+        KEY CONCEPT:
         ========================
         We hedge our HH purchase cost risk using NYMEX NG futures.
         
@@ -509,7 +509,7 @@ class CargoPnLCalculator:
         WHY THIS MATTERS:
         - Reduces P&L volatility (eliminates HH component)
         - Better risk-adjusted returns (same expected P&L, lower risk)
-        - Shows sophisticated risk management to judges
+        - Shows sophisticated risk management approach
         
         Args:
             month: Loading month (e.g., '2026-01')
@@ -556,7 +556,7 @@ class CargoPnLCalculator:
         
         # Step 3: Combine unhedged + hedge = hedged P&L
         # 
-        # CRITICAL INSIGHT FOR JUDGES:
+        # CRITICAL INSIGHT:
         # Unhedged P&L varies with HH spot price
         # Hedge P&L moves opposite to HH spot price
         # Combined P&L is stable (locked at forward price)
@@ -610,7 +610,7 @@ class StrategyOptimizer:
         """
         Optimize cargo volume using ±10% flexibility.
         
-        OPTIMIZATION LOGIC (for judges):
+        OPTIMIZATION LOGIC:
         ================================
         Contract allows 90% to 110% of base volume (3.8M MMBtu).
         

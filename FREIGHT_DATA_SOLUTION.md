@@ -60,18 +60,18 @@
 - Results are **conservative** (overestimate risk) - better than underestimating
 - Monte Carlo still works (just shows high freight risk)
 
-**What to Tell Judges:**
+**Explanation:**
 > "We identified severe data quality issues in the Baltic LNG freight data—
 > volatility of 1,407% due to outliers and data errors. We applied two-step
 > cleaning: monthly aggregation (matching our decision frequency) and industry-
 > based caps ($5k-$120k/day). This reduced volatility to 268%, which remains
 > elevated vs. typical 40-60% but is the best achievable with the provided data.
 > Our Monte Carlo results are therefore conservative, overestimating freight
-> risk, which we believe is prudent for risk management decisions."
+> risk, which is prudent for risk management decisions."
 
 ---
 
-### **Option B: Override with Industry Benchmark** (if judges push back)
+### **Option B: Override with Industry Benchmark**
 
 ✅ **Manually set freight volatility to 60%**
 
@@ -87,7 +87,7 @@ logger.info(f"  Override: 60% (industry benchmark)")
 logger.info(f"  Rationale: Baltic data has known quality issues")
 ```
 
-**What to Tell Judges:**
+**Explanation:**
 > "Given the data quality issues in Baltic LNG freight data, we override the
 > calculated volatility with an industry benchmark of 60% based on published
 > LNG freight market studies. This provides more realistic risk estimates
@@ -129,7 +129,7 @@ logger.info(f"  Rationale: Baltic data has known quality issues")
 
 ---
 
-## What to Show Judges
+## Presentation Guidelines
 
 ### 1. Data Quality Slide
 ```
@@ -151,15 +151,15 @@ IMPACT ON ANALYSIS:
 - Strategy: Freight risk appropriately weighted
 ```
 
-### 2. Defend Your Approach
-**If judges ask: "Why not use 60%?"**
+### 2. Key Points
+**"Why not use 60%?"**
 > "We chose to use the best available data after industry-standard cleaning
 > rather than substitute assumptions. This provides transparency and
 > conservatism. However, we're prepared to re-run with 60% benchmark if
 > preferred—our optimization results won't materially change since freight
 > is only one of four price factors."
 
-**If judges ask: "Does this invalidate your results?"**
+**"Does this invalidate your results?"**
 > "No. First, our optimization is based on **forecasts**, not volatility.
 > Second, high freight volatility in Monte Carlo makes our VaR more
 > conservative, which is prudent. Third, we've documented the limitation
@@ -172,7 +172,7 @@ IMPACT ON ANALYSIS:
 ### Before Final Submission:
 
 1. ✅ **Accept current state** - Data is as good as it can be
-2. ✅ **Document in presentation** - Show judges you identified and addressed issue  
+2. ✅ **Document in presentation** - Show you identified and addressed issue  
 3. ✅ **Prepare defense** - Use talking points above
 4. ⏭️ **Run final optimization** - Verify everything works
 5. ⏭️ **Move to other gaps** - Sensitivity analysis, visualizations
@@ -192,7 +192,7 @@ python main_optimization.py
 
 ## Bottom Line
 
-**Your freight data cleaning is professionally done and defensible.** The remaining volatility is a data limitation, not a methodology flaw. Judges will appreciate:
+**Your freight data cleaning is professionally done and defensible.** The remaining volatility is a data limitation, not a methodology flaw. Key strengths:
 
 1. ✅ You identified the issue
 2. ✅ You applied industry-standard fixes
