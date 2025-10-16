@@ -16,9 +16,11 @@ from scipy import stats
 
 # Import from existing modules
 from config import (
-    CARGO_CONTRACT, VOYAGE_DAYS, OPERATIONAL, SALES_FORMULAS,
+    CARGO_CONTRACT, VOYAGE_DAYS, FREIGHT_SCALING_FACTORS, OPERATIONAL, SALES_FORMULAS,
     BUYERS, CREDIT_DEFAULT_PROBABILITY, CREDIT_RECOVERY_RATE,
     DEMAND_PROFILE, MONTE_CARLO_CARGO_CONFIG, CARGO_SCENARIOS,
+    INSURANCE_COSTS, BROKERAGE_COSTS, WORKING_CAPITAL, CARBON_COSTS,
+    DEMURRAGE_COSTS, LC_COSTS,
     HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG
 )
 
@@ -127,29 +129,122 @@ class CargoPnLCalculator:
         self,
         destination: str,
         freight_rate: float,
+        purchase_cost: float = None,
+        sale_value: float = None,
         cargo_volume: float = None  # NEW: Optional volume override
     ) -> Dict:
         """
-        Calculate freight cost.
+        Calculate comprehensive freight and shipping costs.
         
-        freight_rate is $/day for vessel charter (from Baltic LNG data)
-        Total cost = rate × voyage days (independent of volume for charter)
+        Includes:
+        1. Base freight (Baltic LNG rate × voyage days × route scaling)
+        2. Insurance costs (per voyage premium)
+        3. Brokerage costs (1.25% of base freight)
+        4. Working capital costs (interest on capital during voyage)
+        5. Carbon costs (destination-specific)
+        6. Demurrage risk (expected value)
+        7. Letter of Credit costs (percentage of sale value)
+        
+        Route scaling factors (proxy for distance differences):
+        - Singapore: 0.9 (shorter route)
+        - Japan: 1.0 (baseline BLNG 3G)
+        - China: 1.05 (longer route)
+        
+        Sources documented in config.py for each component
+        
+        Args:
+            destination: Singapore/Japan/China
+            freight_rate: $/day for vessel charter (from Baltic LNG data)
+            purchase_cost: Total purchase cost (for working capital calculation)
+            sale_value: Total sale value (for LC cost calculation)
+            cargo_volume: Optional volume (for ±10% flexibility)
         """
         volume = cargo_volume if cargo_volume is not None else self.cargo_volume
         
-        voyage_days = VOYAGE_DAYS[f'USGC_to_{destination}']
+        route_key = f'USGC_to_{destination}'
+        voyage_days = VOYAGE_DAYS[route_key]
         
+        # Apply route-specific scaling factor
+        scaling_factor = FREIGHT_SCALING_FACTORS.get(route_key, 1.0)
+        
+        # 1. Base Freight Cost
         # Baltic rate is $/day for vessel charter
-        # Total freight = $/day × days
-        total_freight_cost = freight_rate * voyage_days
+        # Total freight = $/day × days × scaling factor
+        base_freight = freight_rate * voyage_days * scaling_factor
+        
+        # 2. Insurance Cost
+        # Per-voyage insurance premium
+        insurance_cost = INSURANCE_COSTS['per_voyage']
+        
+        # 3. Brokerage Cost
+        # 1.25% of base freight for ship broker commission
+        brokerage_cost = base_freight * BROKERAGE_COSTS['rate']
+        
+        # 4. Working Capital Cost
+        # Interest on capital tied up during voyage
+        if purchase_cost is not None:
+            working_capital_cost = purchase_cost * WORKING_CAPITAL['annual_rate'] * (voyage_days / 365)
+        else:
+            # Use estimated cargo value if not provided
+            estimated_value = volume * 10  # Assume $10/MMBtu
+            working_capital_cost = estimated_value * WORKING_CAPITAL['annual_rate'] * (voyage_days / 365)
+        
+        # 5. Carbon Cost
+        # Destination-specific carbon costs based on regional regulations
+        carbon_cost_per_day = CARBON_COSTS['by_destination'][destination]['rate_per_day']
+        carbon_cost = carbon_cost_per_day * voyage_days
+        
+        # 6. Demurrage Cost (Expected Value)
+        # Probabilistic cost of potential delays
+        demurrage_expected = DEMURRAGE_COSTS['expected_cost']
+        
+        # 7. Letter of Credit Cost
+        # Applied to sale value (if provided)
+        if sale_value is not None:
+            lc_cost = max(sale_value * LC_COSTS['rate'], LC_COSTS['minimum_fee'])
+        else:
+            lc_cost = LC_COSTS['minimum_fee']  # Use minimum if sale value not provided
+        
+        # Total Freight and Shipping Costs
+        total_freight_cost = (
+            base_freight +
+            insurance_cost +
+            brokerage_cost +
+            working_capital_cost +
+            carbon_cost +
+            demurrage_expected +
+            lc_cost
+        )
         
         # Per MMBtu equivalent
         freight_per_mmbtu = total_freight_cost / volume
+        base_freight_per_mmbtu = base_freight / volume
         
         return {
-            'freight_per_mmbtu': freight_per_mmbtu,
             'voyage_days': voyage_days,
-            'total_freight_cost': total_freight_cost
+            'scaling_factor': scaling_factor,
+            
+            # Component costs (total)
+            'base_freight': base_freight,
+            'insurance_cost': insurance_cost,
+            'brokerage_cost': brokerage_cost,
+            'working_capital_cost': working_capital_cost,
+            'carbon_cost': carbon_cost,
+            'demurrage_expected': demurrage_expected,
+            'lc_cost': lc_cost,
+            
+            # Component costs (per MMBtu)
+            'base_freight_per_mmbtu': base_freight_per_mmbtu,
+            'insurance_per_mmbtu': insurance_cost / volume,
+            'brokerage_per_mmbtu': brokerage_cost / volume,
+            'working_capital_per_mmbtu': working_capital_cost / volume,
+            'carbon_per_mmbtu': carbon_cost / volume,
+            'demurrage_per_mmbtu': demurrage_expected / volume,
+            'lc_per_mmbtu': lc_cost / volume,
+            
+            # Totals
+            'total_freight_cost': total_freight_cost,
+            'freight_per_mmbtu': freight_per_mmbtu
         }
     
     def calculate_boil_off_opportunity_cost(
@@ -281,8 +376,14 @@ class CargoPnLCalculator:
             destination, buyer, brent_price, jkm_price, jkm_price_next_month, month, volume
         )
         
-        # Step 3: Freight cost
-        freight = self.calculate_freight_cost(destination, freight_rate, volume)
+        # Step 3: Freight cost (comprehensive including all shipping costs)
+        freight = self.calculate_freight_cost(
+            destination, 
+            freight_rate,
+            purchase_cost=purchase['total_cost'],
+            sale_value=sale['total_revenue'],
+            cargo_volume=volume
+        )
         
         # Step 4: Boil-off opportunity cost (already in sale calculation, but track separately)
         boil_off = self.calculate_boil_off_opportunity_cost(destination, sale['sale_price_per_mmbtu'], volume)
@@ -379,7 +480,8 @@ class CargoPnLCalculator:
         jkm_price: float,
         jkm_price_next_month: float,
         brent_price: float,
-        freight_rate: float
+        freight_rate: float,
+        cargo_volume: float = None  # NEW: Optional volume override
     ) -> Dict:
         """
         Calculate cargo P&L WITH Henry Hub hedging.
@@ -413,11 +515,14 @@ class CargoPnLCalculator:
             jkm_price_next_month: JKM price at M+1 (for Japan/China)
             brent_price: Brent price at loading month
             freight_rate: Freight rate
+            cargo_volume: Optional volume (for ±10% flexibility)
             
         Returns:
             Dict with both unhedged and hedged P&L components
         """
         from src.hedging import HenryHubHedge
+        
+        volume = cargo_volume if cargo_volume is not None else self.cargo_volume
         
         # Step 1: Calculate UNHEDGED P&L (baseline)
         # This uses actual spot HH price at loading
@@ -429,7 +534,8 @@ class CargoPnLCalculator:
             jkm_price=jkm_price,
             jkm_price_next_month=jkm_price_next_month,
             brent_price=brent_price,
-            freight_rate=freight_rate
+            freight_rate=freight_rate,
+            cargo_volume=volume
         )
         
         # Step 2: Calculate HEDGE P&L
@@ -438,7 +544,8 @@ class CargoPnLCalculator:
         hedge_result = hedger.calculate_hedge_pnl(
             month=month,
             hh_forward_price_m2=henry_hub_forward_m2,  # Price when hedged
-            hh_spot_price_m=henry_hub_spot_m           # Price at settlement
+            hh_spot_price_m=henry_hub_spot_m,          # Price at settlement
+            cargo_volume=volume
         )
         
         # Step 3: Combine unhedged + hedge = hedged P&L
