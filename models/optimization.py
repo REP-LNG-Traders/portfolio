@@ -210,7 +210,8 @@ class CargoPnLCalculator:
             working_capital_cost = estimated_value * WORKING_CAPITAL['annual_rate'] * (voyage_days / 365)
         
         # 5. Carbon Cost
-        # Destination-specific carbon costs based on regional regulations
+        # Destination-specific carbon costs based on 2026 regional regulations
+        # Singapore: $17.5k/day, Japan: $9.5k/day, China: $5.7k/day
         carbon_cost_per_day = CARBON_COSTS['by_destination'][destination]['rate_per_day']
         carbon_cost = carbon_cost_per_day * voyage_days
         
