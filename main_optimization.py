@@ -439,36 +439,50 @@ def prepare_forecasts_arima_garch(data: dict) -> Dict[str, pd.Series]:
                     diag_dir = Path("outputs/diagnostics/arima_garch")
                     diag_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # Save forecast plot
-                    plt.figure(figsize=(12, 6))
+                    # Save forecast plot with improved styling
+                    import seaborn as sns
+                    sns.set_style("whitegrid")
                     
-                    # Historical
-                    plt.plot(monthly_data.index, monthly_data.values, 
-                            label='Historical', color='blue', linewidth=1.5)
+                    fig, ax = plt.subplots(figsize=(14, 7))
+                    
+                    # Historical data with professional color
+                    ax.plot(monthly_data.index, monthly_data.values, 
+                            label='Historical', color='#2E86AB', linewidth=2.5, alpha=0.9)
                     
                     # Forecast
                     forecast_dates = pd.date_range(monthly_data.index[-1] + pd.DateOffset(months=1),
                                                    periods=horizon_months, freq='MS')
-                    plt.plot(forecast_dates, arima_forecast_df['forecast'].values,
-                            label='ARIMA+GARCH Forecast', color='red', linewidth=2)
+                    ax.plot(forecast_dates, arima_forecast_df['forecast'].values,
+                            label='ARIMA+GARCH Forecast', color='#E63946', linewidth=2.5, alpha=0.9)
                     
                     # Confidence intervals
-                    plt.fill_between(forecast_dates, 
+                    ax.fill_between(forecast_dates, 
                                     arima_forecast_df['lower'].values,
                                     arima_forecast_df['upper'].values,
-                                    alpha=0.3, color='red', label='95% CI')
+                                    alpha=0.25, color='#E63946', label='95% CI')
                     
-                    plt.axvline(monthly_data.index[-1], color='black', 
-                               linestyle='--', alpha=0.5, label='Forecast Start')
-                    plt.xlabel('Date')
-                    plt.ylabel(f'Price ({unit})')
-                    plt.title(f'{commodity.upper().replace("_", " ")} - ARIMA+GARCH Forecast')
-                    plt.legend()
-                    plt.grid(alpha=0.3)
+                    # Forecast start line
+                    ax.axvline(monthly_data.index[-1], color='black', 
+                               linestyle='--', linewidth=2, alpha=0.7, label='Forecast Start')
+                    
+                    # Labels and styling
+                    ax.set_xlabel('Date', fontsize=12, fontweight='bold')
+                    ax.set_ylabel(f'Price ({unit})', fontsize=12, fontweight='bold')
+                    ax.set_title(f'{commodity.upper().replace("_", " ")} - ARIMA+GARCH Forecast', 
+                                fontsize=14, fontweight='bold', pad=15)
+                    ax.legend(loc='best', frameon=True, shadow=True, fontsize=10)
+                    ax.grid(True, alpha=0.3, linewidth=0.5)
+                    
+                    # Clean up spines
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
+                    ax.spines['left'].set_linewidth(1.5)
+                    ax.spines['bottom'].set_linewidth(1.5)
+                    
                     plt.tight_layout()
                     
                     plot_file = diag_dir / f"{commodity}_forecast.png"
-                    plt.savefig(plot_file, dpi=150)
+                    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
                     plt.close()
                     
                     logger.info(f"      Saved plot: {plot_file}")
