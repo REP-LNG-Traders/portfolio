@@ -102,6 +102,54 @@ OPERATIONAL = {
 }
 
 # =============================================================================
+# CHINA SPECIAL PORT FEE - US-LINKED VESSELS
+# =============================================================================
+# Reference: Shanghai Yangshan Port Fees for US ships
+# Special Port Fee for vessels under US ownership or operation
+# Capped at 5 port calls/year; applies to US-linked vessels only
+#
+# SOURCE: Competition case materials - Shanghai Yangshan Port Fee schedule
+#
+# RATES:
+# - From Oct 14, 2025 to Apr 16, 2026: RMB 400 per net tonne (≈ US$56)
+# - From Apr 17, 2026 onwards: RMB 640 per net tonne (≈ US$90)
+#
+# VESSEL ASSUMPTIONS:
+# - Typical LNG carrier capacity: 174,000 m³
+# - Net tonnage: ~70,000 net tonnes (standard for this vessel size)
+#
+# COST IMPACT:
+# - Jan-Mar 2026: 70,000 NT × $56 = $3,920,000 per port call
+# - Apr-Jun 2026: 70,000 NT × $90 = $6,300,000 per port call
+# - Per MMBtu (4.2M cargo): $0.93/MMBtu (Jan-Mar), $1.50/MMBtu (Apr-Jun)
+
+SPECIAL_PORT_FEE = {
+    'enabled': True,
+    'jurisdiction': 'China',  # Only applies to China (Shanghai Yangshan Port)
+    'vessel_net_tonnage': 70000,  # Net tonnes for typical 174,000 m³ LNG carrier
+    'fee_schedule': {
+        # RMB per net tonne, with USD conversion
+        'period_1': {
+            'start_date': '2025-10-14',
+            'end_date': '2026-04-16',
+            'rmb_per_net_tonne': 400,
+            'usd_per_net_tonne': 56,  # RMB 400 ≈ US$56 per case materials
+            'exchange_rate': 7.14  # RMB/USD (400/56)
+        },
+        'period_2': {
+            'start_date': '2026-04-17',
+            'end_date': '2026-12-31',
+            'rmb_per_net_tonne': 640,
+            'usd_per_net_tonne': 90,  # RMB 640 ≈ US$90 per case materials
+            'exchange_rate': 7.11  # RMB/USD (640/90)
+        }
+    },
+    'total_fee_period_1': 3920000,  # $56 × 70,000 NT = $3.92M
+    'total_fee_period_2': 6300000,  # $90 × 70,000 NT = $6.30M
+    'note': 'Special Port Fee for US-linked vessels; standard fees lower for non-US vessels'
+}
+
+# =============================================================================
 # BIOLNG MANDATE (Singapore) - NEW REGULATION
 # =============================================================================
 

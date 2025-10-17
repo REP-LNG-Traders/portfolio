@@ -20,7 +20,7 @@ from config import (
     BUYERS, CREDIT_DEFAULT_PROBABILITY, CREDIT_RECOVERY_RATE,
     DEMAND_PROFILE, MONTE_CARLO_CARGO_CONFIG, CARGO_SCENARIOS,
     INSURANCE_COSTS, BROKERAGE_COSTS, WORKING_CAPITAL, CARBON_COSTS,
-    DEMURRAGE_COSTS, LC_COSTS,
+    DEMURRAGE_COSTS, LC_COSTS, SPECIAL_PORT_FEE,
     HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG, SALES_CONTRACT, DEMAND_PRICING_MODEL, BIOLNG_MANDATE
 )
 
@@ -226,6 +226,17 @@ class CargoPnLCalculator:
         else:
             lc_cost = LC_COSTS['minimum_fee']  # Use minimum if sale value not provided
         
+        # 8. China Special Port Fee (China Only)
+        # Special port fee for US-linked vessels at Shanghai Yangshan Port
+        # RMB 400/net tonne (Jan-Mar 2026), RMB 640/net tonne (Apr-Jun 2026)
+        special_port_fee = 0  # Default: no fee for Singapore/Japan
+        if destination == 'China' and SPECIAL_PORT_FEE['enabled']:
+            # Determine which fee period applies based on month
+            # For competition: Jan-Mar uses period_1, Apr-Jun uses period_2
+            # TODO: If month info available, switch on Apr 17. For now, use simpler logic.
+            special_port_fee = SPECIAL_PORT_FEE['total_fee_period_1']  # Default to period 1
+            # Note: Period 2 fee ($6.3M) would apply from Apr 17, 2026 onwards
+        
         # Total Freight and Shipping Costs
         total_freight_cost = (
             base_freight +
@@ -234,7 +245,8 @@ class CargoPnLCalculator:
             working_capital_cost +
             carbon_cost +
             demurrage_expected +
-            lc_cost
+            lc_cost +
+            special_port_fee  # Added Special Port Fee
         )
         
         # Per MMBtu equivalent
@@ -253,6 +265,7 @@ class CargoPnLCalculator:
             'carbon_cost': carbon_cost,
             'demurrage_expected': demurrage_expected,
             'lc_cost': lc_cost,
+            'special_port_fee': special_port_fee,  # Added Special Port Fee
             
             # Component costs (per MMBtu)
             'base_freight_per_mmbtu': base_freight_per_mmbtu,
@@ -262,6 +275,7 @@ class CargoPnLCalculator:
             'carbon_per_mmbtu': carbon_cost / volume,
             'demurrage_per_mmbtu': demurrage_expected / volume,
             'lc_per_mmbtu': lc_cost / volume,
+            'special_port_fee_per_mmbtu': special_port_fee / volume,  # Added Special Port Fee per MMBtu
             
             # Totals
             'total_freight_cost': total_freight_cost,
