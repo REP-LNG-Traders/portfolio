@@ -205,41 +205,32 @@ SALES_FORMULAS = {
 # BUYERS
 # =============================================================================
 
+# FILTERED TO A-RATED AND ABOVE ONLY (AA, A)
 BUYERS = {
     'Singapore': {
         'Iron_Man': {
-            'premium': 4.00,  # $/MMBtu
-            'credit_rating': 'AA',
+            'premium': 4.00,  # $/MMBtu (A-rated, moderate negotiating power)
+            'credit_rating': 'A',
             'type': 'bunker'
         },
         'Thor': {
-            'premium': 3.50,  # $/MMBtu (LOW end due to AA negotiating power)
+            'premium': 3.50,  # $/MMBtu (AA-rated, strong negotiator - gets discount)
             'credit_rating': 'AA',
             'type': 'utility'
         }
     },
     'Japan': {
         'Hawk_Eye': {
-            'premium': 0.60,  # $/MMBtu (LOW end due to strong negotiator)
-            'credit_rating': 'A',
+            'premium': 0.60,  # $/MMBtu (AA-rated, strong negotiator - gets discount)
+            'credit_rating': 'AA',
             'type': 'utility'
-        },
-        'QuickSilver': {
-            'premium': 2.20,  # $/MMBtu
-            'credit_rating': 'BBB',
-            'type': 'trader'
         }
     },
     'China': {
         'QuickSilver': {
-            'premium': 2.20,  # $/MMBtu
-            'credit_rating': 'BBB',
-            'type': 'trader'
-        },
-        'Hawk_Eye': {
-            'premium': 0.60,  # $/MMBtu
+            'premium': 2.20,  # $/MMBtu (A-rated, moderate negotiator)
             'credit_rating': 'A',
-            'type': 'utility'
+            'type': 'trader'
         }
     }
 }
@@ -248,17 +239,19 @@ BUYERS = {
 # BUYER CREDIT RATINGS (by destination and buyer)
 # =============================================================================
 
+# FILTERED TO A-RATED AND ABOVE ONLY
 BUYER_CREDIT_RATINGS = {
-    'Iron_Man': 'AA',      # Highest credit quality
-    'Thor': 'AA',          # Highest credit quality
-    'Hawk_Eye': 'A',       # Strong credit quality
-    'QuickSilver': 'BBB'   # Good credit quality
+    'Iron_Man': 'A',       # CORRECTED: Case page 18 shows A-rated
+    'Thor': 'AA',          # Highest credit quality (CORRECT)
+    'Hawk_Eye': 'AA',      # CORRECTED: Case page 18 shows AA-rated
+    'QuickSilver': 'A'     # CORRECTED: Case page 18 shows A-rated
 }
 
 # =============================================================================
 # BUYER DEMAND PROBABILITIES (from case pack page 17)
 # =============================================================================
 
+# FILTERED TO A-RATED AND ABOVE ONLY
 BUYER_DEMAND_PROBABILITIES = {
     'Iron_Man': 0.75,      # 75% probability of taking delivery
     'Thor': 0.70,          # 70% probability
@@ -304,12 +297,13 @@ RISK_FREE_RATE = 0.05  # 5% annual rate
 # CREDIT DEFAULT PROBABILITY
 # =============================================================================
 
+# FILTERED TO A-RATED AND ABOVE ONLY
 CREDIT_DEFAULT_PROBABILITY = {
     # By buyer name
-    'Iron_Man': 0.001,  # AA rating
-    'Thor': 0.001,      # AA rating
-    'Hawk_Eye': 0.005,  # A rating
-    'QuickSilver': 0.02,  # BBB rating
+    'Iron_Man': 0.005,  # CORRECTED: A rating (was 0.001 for AA)
+    'Thor': 0.001,      # AA rating (CORRECT)
+    'Hawk_Eye': 0.001,  # CORRECTED: AA rating (was 0.005 for A)
+    'QuickSilver': 0.005,  # CORRECTED: A rating (was 0.02 for BBB)
     # By rating (for lookup by rating)
     'AA': 0.001,
     'A': 0.005,
@@ -323,12 +317,13 @@ CREDIT_DEFAULT_PROBABILITY = {
 # CREDIT RECOVERY RATE
 # =============================================================================
 
+# FILTERED TO A-RATED AND ABOVE ONLY
 CREDIT_RECOVERY_RATE = {
     # By buyer name
-    'Iron_Man': 0.40,  # 40% recovery
-    'Thor': 0.40,      # 40% recovery
-    'Hawk_Eye': 0.35,  # 35% recovery
-    'QuickSilver': 0.30,  # 30% recovery
+    'Iron_Man': 0.35,  # CORRECTED: A rating (was 0.40 for AA)
+    'Thor': 0.40,      # 40% recovery (CORRECT for AA)
+    'Hawk_Eye': 0.40,  # CORRECTED: AA rating (was 0.35 for A)
+    'QuickSilver': 0.35,  # CORRECTED: A rating (was 0.30 for BBB)
     # By rating (for lookup by rating)
     'AA': 0.40,
     'A': 0.35,

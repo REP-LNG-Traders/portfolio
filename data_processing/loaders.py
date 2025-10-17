@@ -510,7 +510,7 @@ def load_all_data() -> dict:
         data['henry_hub'] = load_henry_hub_data()
         data['jkm'] = load_jkm_data()
         data['brent'] = load_brent_data()
-        data['wti'] = load_wti_data()
+        # data['wti'] = load_wti_data()  # NOT NEEDED - only used in hybrid forecasting, we use ARIMA+GARCH for Brent
         data['freight'] = load_freight_data()
         data['fx'] = load_fx_data()
         
