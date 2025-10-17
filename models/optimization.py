@@ -351,6 +351,59 @@ class CargoPnLCalculator:
             'opportunity_cost': opportunity_cost
         }
     
+    def _get_smooth_price_adjustment(self, demand_pct: float) -> tuple:
+        """
+        Calculate smooth price adjustment using polynomial interpolation.
+        
+        Avoids sharp discontinuities at threshold boundaries (e.g. 19% vs 21% demand).
+        Uses cubic polynomial fitted to anchor points for natural market response curve.
+        
+        Returns:
+            tuple: (price_adjustment $/MMBtu, market_description str)
+        """
+        # Define anchor points based on tier thresholds and adjustments
+        # Use fine-grained points for smooth curve
+        demand_points = np.array([0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00])
+        
+        # Corresponding adjustments (interpolated from tiers)
+        adjustment_points = np.array([
+            -2.00,  # 0% - extreme discount
+            -2.00,  # 10% - very low
+            -2.00,  # 20% - very low ceiling
+            -1.50,  # 30% - transition low
+            -1.00,  # 40% - low ceiling
+            -0.625, # 50% - moderate midpoint
+            -0.25,  # 60% - moderate ceiling
+            -0.125, # 70% - high transition
+            0.00,   # 80% - high ceiling
+            +0.50,  # 90% - very high transition
+            +1.00   # 100% - very high
+        ])
+        
+        # Fit cubic polynomial (degree 3 for smooth curves without overfitting)
+        coeffs = np.polyfit(demand_points, adjustment_points, deg=3)
+        poly = np.poly1d(coeffs)
+        
+        # Calculate smooth adjustment
+        price_adj = float(poly(demand_pct))
+        
+        # Clamp to reasonable bounds (avoid polynomial overshoot)
+        price_adj = max(-2.50, min(1.50, price_adj))
+        
+        # Market description
+        if demand_pct < 0.20:
+            market_desc = f'Very tight market - steep discount (demand {demand_pct:.0%})'
+        elif demand_pct < 0.40:
+            market_desc = f'Tight market - moderate discount (demand {demand_pct:.0%})'
+        elif demand_pct < 0.60:
+            market_desc = f'Balanced market - minor adjustment (demand {demand_pct:.0%})'
+        elif demand_pct < 0.80:
+            market_desc = f'Good market - base pricing (demand {demand_pct:.0%})'
+        else:
+            market_desc = f'Hot market - premium pricing (demand {demand_pct:.0%})'
+        
+        return price_adj, market_desc
+    
     def apply_demand_adjustment(
         self,
         destination: str,
@@ -376,6 +429,8 @@ class CargoPnLCalculator:
         2. M-1 nomination = contracted sale (not contingent)
         3. Matches industry practice (forward contracts, not spot gambling)
         
+        SMOOTHING: Polynomial interpolation avoids sharp threshold discontinuities.
+        
         OLD MODEL (Probability):
         expected_pnl = base_pnl × probability
         Problem: Implies lifting cargo with 13% chance = disaster scenario
@@ -398,23 +453,28 @@ class CargoPnLCalculator:
             # Demand % affects negotiating power and achievable pricing
             
             # Determine price adjustment based on demand level
-            adjustments = DEMAND_PRICING_MODEL['adjustments']
-            
-            if demand_pct < adjustments['very_low']['threshold']:  # <20%
-                price_adj = adjustments['very_low']['adjustment']
-                market_desc = 'Very tight market - steep discount required'
-            elif demand_pct < adjustments['low']['threshold']:  # 20-40%
-                price_adj = adjustments['low']['adjustment']
-                market_desc = 'Tight market - moderate discount'
-            elif demand_pct < adjustments['moderate']['threshold']:  # 40-60%
-                price_adj = adjustments['moderate']['adjustment']
-                market_desc = 'Balanced market - slight discount'
-            elif demand_pct < adjustments['high']['threshold']:  # 60-80%
-                price_adj = 0.00
-                market_desc = 'Good market - base pricing'
-            else:  # >80%
-                price_adj = adjustments['very_high']['adjustment']
-                market_desc = 'Hot market - premium pricing'
+            if DEMAND_PRICING_MODEL.get('smooth', False):
+                # Smooth polynomial interpolation (more realistic)
+                price_adj, market_desc = self._get_smooth_price_adjustment(demand_pct)
+            else:
+                # Step function (simpler, original approach)
+                adjustments = DEMAND_PRICING_MODEL['adjustments']
+                
+                if demand_pct < adjustments['very_low']['threshold']:  # <20%
+                    price_adj = adjustments['very_low']['adjustment']
+                    market_desc = 'Very tight market - steep discount required'
+                elif demand_pct < adjustments['low']['threshold']:  # 20-40%
+                    price_adj = adjustments['low']['adjustment']
+                    market_desc = 'Tight market - moderate discount'
+                elif demand_pct < adjustments['moderate']['threshold']:  # 40-60%
+                    price_adj = adjustments['moderate']['adjustment']
+                    market_desc = 'Balanced market - slight discount'
+                elif demand_pct < adjustments['high']['threshold']:  # 60-80%
+                    price_adj = 0.00
+                    market_desc = 'Good market - base pricing'
+                else:  # >80%
+                    price_adj = adjustments['very_high']['adjustment']
+                    market_desc = 'Hot market - premium pricing'
             
             # Apply price adjustment to revenue
             if sale_price_per_mmbtu is not None:
