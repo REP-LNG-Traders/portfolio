@@ -1095,6 +1095,10 @@ def main(run_monte_carlo: bool = True, run_scenarios: bool = True, use_arima_gar
     """
     from config import CARGO_ARIMA_GARCH_CONFIG, HEDGING_CONFIG
     
+    # SET RANDOM SEED FOR REPRODUCIBILITY
+    # This ensures consistent forecasts and Monte Carlo results across runs
+    np.random.seed(42)
+    
     try:
         # Step 1: Load data
         logger.info("\n" + "="*80)
