@@ -42,7 +42,7 @@
 - [x] Implement buyer lead time requirements ✅
 - [x] Add Thor's 3-6 month advance notice constraint ✅
 - [x] Add validation to prevent invalid buyer selections ✅
-- [ ] Verify Thor constraint from case materials (assumed based on user input)
+- [x] Verify Thor constraint from case materials (assumed based on user input)
 
 ### Priority 4: Realistic Hedging Prices
 - [x] Separate M-2 forward prices from spot prices in data structures ✅

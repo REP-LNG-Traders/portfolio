@@ -21,7 +21,7 @@ from config import (
     DEMAND_PROFILE, MONTE_CARLO_CARGO_CONFIG, CARGO_SCENARIOS,
     INSURANCE_COSTS, BROKERAGE_COSTS, WORKING_CAPITAL, CARBON_COSTS,
     DEMURRAGE_COSTS, LC_COSTS,
-    HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG, SALES_CONTRACT, DEMAND_PRICING_MODEL
+    HEDGING_CONFIG, VOLUME_FLEXIBILITY_CONFIG, SALES_CONTRACT, DEMAND_PRICING_MODEL, BIOLNG_MANDATE
 )
 
 logger = logging.getLogger(__name__)
@@ -267,6 +267,67 @@ class CargoPnLCalculator:
             'freight_per_mmbtu': freight_per_mmbtu
         }
     
+    def calculate_biolng_penalty(
+        self,
+        destination: str,
+        sale_volume_mmbtu: float
+    ) -> Dict:
+        """
+        Calculate BioLNG mandate penalty for Singapore deliveries.
+        
+        Singapore now mandates 5% BioLNG content. Since we have 0% BioLNG,
+        we must pay a penalty of 30 SGD per metric tonne on the shortfall.
+        
+        Calculation:
+        1. Shortfall = 5% of sales volume (since we have 0% BioLNG)
+        2. Convert shortfall to metric tonnes (1 MT ≈ 48 MMBtu)
+        3. Penalty = shortfall_MT × 30 SGD × (SGD/USD exchange rate)
+        
+        Args:
+            destination: Destination port
+            sale_volume_mmbtu: Actual sales volume delivered (MMBtu)
+            
+        Returns:
+            Dictionary with penalty details
+        """
+        if not BIOLNG_MANDATE['enabled'] or destination != BIOLNG_MANDATE['jurisdiction']:
+            return {
+                'penalty_usd': 0.0,
+                'shortfall_mmbtu': 0.0,
+                'shortfall_mt': 0.0,
+                'applies': False
+            }
+        
+        # Calculate shortfall (5% of volume since we have 0% BioLNG)
+        mandate_pct = BIOLNG_MANDATE['mandate_percentage']  # 5%
+        our_content = BIOLNG_MANDATE['our_biolng_content']  # 0%
+        shortfall_pct = mandate_pct - our_content  # 5%
+        
+        shortfall_mmbtu = sale_volume_mmbtu * shortfall_pct
+        
+        # Convert to metric tonnes (1 MT ≈ 48 MMBtu)
+        mmbtu_to_mt = BIOLNG_MANDATE['lng_mmbtu_to_mt']  # 1/48
+        shortfall_mt = shortfall_mmbtu * mmbtu_to_mt
+        
+        # Calculate penalty in SGD
+        penalty_sgd_per_mt = BIOLNG_MANDATE['penalty_sgd_per_mt']  # 30 SGD
+        penalty_sgd = shortfall_mt * penalty_sgd_per_mt
+        
+        # Convert to USD
+        sgd_to_usd = BIOLNG_MANDATE['sgd_to_usd']  # 0.74
+        penalty_usd = penalty_sgd * sgd_to_usd
+        
+        return {
+            'penalty_usd': penalty_usd,
+            'penalty_sgd': penalty_sgd,
+            'shortfall_mmbtu': shortfall_mmbtu,
+            'shortfall_mt': shortfall_mt,
+            'penalty_per_mmbtu': penalty_usd / sale_volume_mmbtu if sale_volume_mmbtu > 0 else 0,
+            'applies': True,
+            'mandate_pct': mandate_pct,
+            'our_content': our_content
+        }
+    
     def calculate_boil_off_opportunity_cost(
         self,
         destination: str,
@@ -497,8 +558,13 @@ class CargoPnLCalculator:
         else:
             stranded_cost = 0
         
+        # Step 4c: BioLNG mandate penalty (Singapore only)
+        # Singapore now requires 5% BioLNG content. Since we have 0%, we pay penalty.
+        biolng = self.calculate_biolng_penalty(destination, sale['sales_volume'])
+        biolng_penalty = biolng['penalty_usd']
+        
         # Step 5: Gross P&L before adjustments
-        gross_pnl = sale['total_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - stranded_cost
+        gross_pnl = sale['total_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - stranded_cost - biolng_penalty
         
         # Step 6: Credit risk adjustment
         credit_adj = self.apply_credit_risk_adjustment(
@@ -508,7 +574,7 @@ class CargoPnLCalculator:
         )
         
         # Recalculate P&L with credit adjustment
-        pnl_after_credit = credit_adj['credit_adjusted_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - stranded_cost
+        pnl_after_credit = credit_adj['credit_adjusted_revenue'] - purchase['total_cost'] - freight['total_freight_cost'] - stranded_cost - biolng_penalty
         
         # Step 7: Demand adjustment (with price for new model)
         demand_adj = self.apply_demand_adjustment(
@@ -548,6 +614,8 @@ class CargoPnLCalculator:
             'sale_revenue_gross': sale['total_revenue'],
             'freight_cost': freight['total_freight_cost'],
             'stranded_cost': stranded_cost,
+            'biolng_penalty': biolng_penalty,  # NEW: BioLNG mandate penalty (Singapore)
+            'biolng_penalty_applies': biolng['applies'],
             'gross_pnl': gross_pnl,
             
             # Adjustments

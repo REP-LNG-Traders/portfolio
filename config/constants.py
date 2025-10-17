@@ -102,6 +102,21 @@ OPERATIONAL = {
 }
 
 # =============================================================================
+# BIOLNG MANDATE (Singapore) - NEW REGULATION
+# =============================================================================
+
+BIOLNG_MANDATE = {
+    'enabled': True,
+    'jurisdiction': 'Singapore',  # Only applies to Singapore
+    'mandate_percentage': 0.05,  # 5% BioLNG required
+    'our_biolng_content': 0.00,  # We have 0% BioLNG (no change to cargo)
+    'penalty_sgd_per_mt': 30,  # 30 SGD per metric tonne on shortfall
+    'sgd_to_usd': 0.74,  # Approximate exchange rate: 1 SGD = 0.74 USD (1.35 SGD/USD)
+    'lng_mmbtu_to_mt': 1/48,  # 1 metric tonne LNG ≈ 48 MMBtu (industry standard)
+    'note': 'Penalty applies to entire 5% shortfall since we have 0% BioLNG content'
+}
+
+# =============================================================================
 # TERMINAL COSTS
 # =============================================================================
 
