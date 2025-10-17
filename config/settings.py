@@ -63,6 +63,7 @@ SALES_CONTRACT = {
 DEMAND_PRICING_MODEL = {
     'enabled': True,  # Use price adjustment instead of probability
     'model_type': 'price_adjustment',  # vs 'probability' (old approach)
+    'smooth': True,  # Use polynomial smoothing (vs step function)
     'rationale': 'Sales are forward contracts (M-1 nomination). Demand % affects negotiating position and achievable pricing, not binary sale probability.',
     
     # Price adjustments by demand level ($/MMBtu)

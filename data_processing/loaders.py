@@ -311,6 +311,9 @@ def load_wti_data() -> pd.DataFrame:
         fwd = fwd.set_index('Date').sort_index()
         fwd = fwd.rename(columns={'Price': 'WTI_Forward'})
         
+        # Remove duplicate dates (keep first occurrence)
+        fwd = fwd[~fwd.index.duplicated(keep='first')]
+        
         logger.info(f"  WTI Forward: {len(fwd)} contracts from {fwd.index[0].strftime('%Y-%m')} to {fwd.index[-1].strftime('%Y-%m')}")
         
         # Combine (outer join to keep all dates)

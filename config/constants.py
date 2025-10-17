@@ -102,6 +102,21 @@ OPERATIONAL = {
 }
 
 # =============================================================================
+# BIOLNG MANDATE (Singapore) - NEW REGULATION
+# =============================================================================
+
+BIOLNG_MANDATE = {
+    'enabled': True,
+    'jurisdiction': 'Singapore',  # Only applies to Singapore
+    'mandate_percentage': 0.05,  # 5% BioLNG required
+    'our_biolng_content': 0.00,  # We have 0% BioLNG (no change to cargo)
+    'penalty_sgd_per_mt': 30,  # 30 SGD per metric tonne on shortfall
+    'sgd_to_usd': 0.74,  # Approximate exchange rate: 1 SGD = 0.74 USD (1.35 SGD/USD)
+    'lng_mmbtu_to_mt': 1/48,  # 1 metric tonne LNG ≈ 48 MMBtu (industry standard)
+    'note': 'Penalty applies to entire 5% shortfall since we have 0% BioLNG content'
+}
+
+# =============================================================================
 # TERMINAL COSTS
 # =============================================================================
 
@@ -428,18 +443,40 @@ WORKING_CAPITAL = {
 }
 
 # =============================================================================
-# CARBON COSTS
+# CARBON COSTS (2026 Regional Carbon Pricing)
 # =============================================================================
+# Based on 473 tons CO₂/day from LNG carrier operations
+# (150 tons fuel/day × 3.15 emission factor)
+#
+# Regional carbon prices reflect 2026 government policies:
+# - Singapore: S$50/ton transition rate → $37 USD/ton
+# - Japan: Voluntary carbon market → $20 USD/ton
+# - China: National ETS rate → $12 USD/ton (if expanded to maritime)
 
 CARBON_COSTS = {
     'by_destination': {
-        'Singapore': {'rate_per_day': 5000},  # $5k/day
-        'Japan': {'rate_per_day': 5000},      # $5k/day
-        'China': {'rate_per_day': 5000}       # $5k/day
+        'Singapore': {
+            'rate_per_day': 17500,  # $17.5k/day ($37/ton × 473 tons CO₂/day)
+            'carbon_price_per_ton': 37,
+            'source': 'Singapore 2026-2030 carbon tax roadmap (S$50/ton)'
+        },
+        'Japan': {
+            'rate_per_day': 9500,   # $9.5k/day ($20/ton × 473 tons CO₂/day)
+            'carbon_price_per_ton': 20,
+            'source': 'Japan voluntary carbon market baseline'
+        },
+        'China': {
+            'rate_per_day': 5700,   # $5.7k/day ($12/ton × 473 tons CO₂/day)
+            'carbon_price_per_ton': 12,
+            'source': 'China ETS rate (if expanded to maritime)'
+        }
     },
-    'Singapore': 0.03,  # $0.03/MMBtu (alternative)
-    'Japan': 0.03,      # $0.03/MMBtu
-    'China': 0.03       # $0.03/MMBtu
+    'assumptions': {
+        'daily_co2_emissions_tons': 473,
+        'fuel_consumption_tons_per_day': 150,
+        'emission_factor_co2_per_fuel_ton': 3.15
+    },
+    'note': 'Updated Oct 2025 based on 2026 regional carbon policy research'
 }
 
 # =============================================================================
