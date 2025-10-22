@@ -664,46 +664,57 @@ class EmbeddedOptionAnalyzer:
         # Filter out summary row
         plot_df = options_df[options_df['delivery_month'] != 'SUMMARY'].copy()
         
-        # Create figure
-        plt.figure(figsize=(12, 8))
+        # Create figure with better styling
+        sns.set_style("whitegrid")
+        fig, ax = plt.subplots(figsize=(14, 8))
         
         # Prepare data
         months = [m.split('-')[1] for m in plot_df['delivery_month']]  # Extract month names
         intrinsic_values = plot_df['intrinsic_value_per_mmbtu']
         time_values = plot_df['time_value_per_mmbtu']
         
-        # Create bars
+        # Create bars with professional colors
         x = np.arange(len(months))
-        width = 0.35
+        width = 0.4
         
-        bars1 = plt.bar(x - width/2, intrinsic_values, width, label='Intrinsic Value', 
-                       color='steelblue', alpha=0.8)
-        bars2 = plt.bar(x + width/2, time_values, width, label='Time Value', 
-                       color='lightcoral', alpha=0.8)
+        bars1 = ax.bar(x - width/2, intrinsic_values, width, label='Intrinsic Value', 
+                       color='#2E86AB', alpha=0.85, edgecolor='black', linewidth=1.5)
+        bars2 = ax.bar(x + width/2, time_values, width, label='Time Value', 
+                       color='#F18F01', alpha=0.85, edgecolor='black', linewidth=1.5)
         
         # Add exercise threshold line
         threshold = self.exercise_threshold
-        plt.axhline(y=threshold, color='red', linestyle='--', linewidth=2, 
-                   label=f'Exercise Threshold (${threshold}/MMBtu)')
+        ax.axhline(y=threshold, color='#E63946', linestyle='--', linewidth=2.5, 
+                   label=f'Exercise Threshold (${threshold}/MMBtu)', alpha=0.8)
         
-        # Highlight recommended options
+        # Highlight recommended options with different color
         for i, (idx, row) in enumerate(plot_df.iterrows()):
             if row['exercise_recommendation'] == 'YES':
-                bars1[i].set_color('green')
-                bars2[i].set_color('darkgreen')
+                bars1[i].set_color('#06A77D')
+                bars1[i].set_alpha(0.9)
+                bars2[i].set_color('#06A77D')
+                bars2[i].set_alpha(0.7)
         
         # Customize plot
-        plt.xlabel('Delivery Month', fontsize=12)
-        plt.ylabel('Option Value ($/MMBtu)', fontsize=12)
-        plt.title('Embedded Option Analysis - Jul-Dec 2026', fontsize=14, fontweight='bold')
-        plt.xticks(x, months)
-        plt.legend()
-        plt.grid(True, alpha=0.3)
+        ax.set_xlabel('Delivery Month', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Option Value ($/MMBtu)', fontsize=12, fontweight='bold')
+        ax.set_title('Embedded Option Analysis - Jan-Jun 2026', fontsize=14, fontweight='bold', pad=15)
+        ax.set_xticks(x)
+        ax.set_xticklabels(months, fontsize=11)
+        ax.legend(loc='upper left', frameon=True, shadow=True, fontsize=10)
+        ax.grid(True, alpha=0.3, linewidth=0.5)
+        
+        # Clean up spines
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_linewidth(1.5)
+        ax.spines['bottom'].set_linewidth(1.5)
         
         # Add value labels on bars
         for i, (intrinsic, time) in enumerate(zip(intrinsic_values, time_values)):
             total = intrinsic + time
-            plt.text(i, total + 0.05, f'${total:.2f}', ha='center', va='bottom', fontweight='bold')
+            ax.text(i, total + 0.08, f'${total:.2f}', ha='center', va='bottom', 
+                   fontsize=10, fontweight='bold')
         
         plt.tight_layout()
         plt.savefig(output_path, dpi=300, bbox_inches='tight')

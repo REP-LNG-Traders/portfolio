@@ -320,12 +320,16 @@ def plot_acf_pacf(
     """
     logger.info(f"\nCreating ACF/PACF plots for {data_type}...")
     
+    # Set clean professional style
+    sns.set_style("whitegrid")
+    plt.rcParams['font.family'] = 'sans-serif'
+    
     # Ensure data is DataFrame
     if isinstance(data, pd.Series):
         data = data.to_frame()
     
     n_markets = len(data.columns)
-    fig, axes = plt.subplots(n_markets, 2, figsize=(14, 4 * n_markets))
+    fig, axes = plt.subplots(n_markets, 2, figsize=(16, 5 * n_markets))
     
     # Ensure axes is 2D
     if n_markets == 1:
@@ -334,22 +338,28 @@ def plot_acf_pacf(
     for i, market in enumerate(data.columns):
         series = data[market].dropna()
         
-        # ACF plot
+        # ACF plot with improved styling
         plot_acf(series, lags=lags, ax=axes[i, 0], alpha=0.05)
-        axes[i, 0].set_title(f'{market} - ACF ({data_type})', fontweight='bold', fontsize=12)
-        axes[i, 0].set_xlabel('Lag')
-        axes[i, 0].set_ylabel('Autocorrelation')
-        axes[i, 0].grid(True, alpha=0.3)
+        axes[i, 0].set_title(f'{market} - Autocorrelation ({data_type})', 
+                            fontweight='bold', fontsize=13, pad=10)
+        axes[i, 0].set_xlabel('Lag', fontsize=11, fontweight='bold')
+        axes[i, 0].set_ylabel('Autocorrelation', fontsize=11, fontweight='bold')
+        axes[i, 0].grid(True, alpha=0.3, linewidth=0.5)
+        axes[i, 0].spines['top'].set_visible(False)
+        axes[i, 0].spines['right'].set_visible(False)
         
-        # PACF plot
+        # PACF plot with improved styling
         plot_pacf(series, lags=lags, ax=axes[i, 1], alpha=0.05, method='ywm')
-        axes[i, 1].set_title(f'{market} - PACF ({data_type})', fontweight='bold', fontsize=12)
-        axes[i, 1].set_xlabel('Lag')
-        axes[i, 1].set_ylabel('Partial Autocorrelation')
-        axes[i, 1].grid(True, alpha=0.3)
+        axes[i, 1].set_title(f'{market} - Partial Autocorrelation ({data_type})', 
+                            fontweight='bold', fontsize=13, pad=10)
+        axes[i, 1].set_xlabel('Lag', fontsize=11, fontweight='bold')
+        axes[i, 1].set_ylabel('Partial Autocorrelation', fontsize=11, fontweight='bold')
+        axes[i, 1].grid(True, alpha=0.3, linewidth=0.5)
+        axes[i, 1].spines['top'].set_visible(False)
+        axes[i, 1].spines['right'].set_visible(False)
     
     plt.suptitle(f'ACF/PACF Analysis - {data_type.replace("_", " ").title()}', 
-                 fontsize=14, fontweight='bold', y=0.995)
+                 fontsize=15, fontweight='bold', y=0.998)
     plt.tight_layout()
     
     # Save figure

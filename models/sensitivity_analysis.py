@@ -625,36 +625,49 @@ def create_sensitivity_plots(
     
     logger.info(f"\nCreating sensitivity visualizations...")
     
-    # Set style
+    # Set clean professional style
     sns.set_style("whitegrid")
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.size'] = 10
     
     # Plot 1: Price Sensitivity Lines
     if 'price_sensitivities' in sensitivity_results:
-        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig, axes = plt.subplots(2, 2, figsize=(15, 11))
         
         commodities = ['henry_hub', 'jkm', 'brent', 'freight']
         titles = ['Henry Hub', 'JKM', 'Brent', 'Freight']
+        colors = ['#2E86AB', '#A23B72', '#F18F01', '#06A77D']
         
-        for idx, (commodity, title) in enumerate(zip(commodities, titles)):
+        for idx, (commodity, title, color) in enumerate(zip(commodities, titles, colors)):
             ax = axes[idx // 2, idx % 2]
             
             df = sensitivity_results['price_sensitivities'][commodity]
             
-            # P&L line
+            # P&L line with cleaner styling
             ax.plot(df['adjustment_pct'], df['total_pnl'] / 1e6, 
-                   linewidth=2, marker='o', label='Total P&L')
+                   linewidth=2.5, marker='o', markersize=6, 
+                   color=color, label='Total P&L', alpha=0.9)
             
             # Base case line
-            ax.axvline(0, color='red', linestyle='--', alpha=0.5, label='Base Case')
-            ax.axhline(df[df['adjustment'] == 1.0]['total_pnl'].iloc[0] / 1e6,
-                      color='gray', linestyle=':', alpha=0.5)
+            ax.axvline(0, color='#E63946', linestyle='--', linewidth=2, 
+                      alpha=0.7, label='Base Case', zorder=0)
+            base_pnl = df[df['adjustment'] == 1.0]['total_pnl'].iloc[0] / 1e6
+            ax.axhline(base_pnl, color='gray', linestyle=':', linewidth=1.5, alpha=0.5)
             
-            ax.set_xlabel(f'{title} Price Adjustment (%)')
-            ax.set_ylabel('Total P&L ($M)')
-            ax.set_title(f'Sensitivity to {title} Prices')
-            ax.grid(True, alpha=0.3)
-            ax.legend()
+            # Styling
+            ax.set_xlabel(f'{title} Price Adjustment (%)', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Total P&L ($M)', fontsize=11, fontweight='bold')
+            ax.set_title(f'Sensitivity to {title} Prices', fontsize=12, fontweight='bold', pad=10)
+            ax.grid(True, alpha=0.3, linewidth=0.5)
+            ax.legend(loc='best', frameon=True, shadow=True, fontsize=9)
+            
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_linewidth(1.5)
+            ax.spines['bottom'].set_linewidth(1.5)
         
+        plt.suptitle('Price Sensitivity Analysis', fontsize=14, fontweight='bold', y=0.995)
         plt.tight_layout()
         plt.savefig(output_dir / 'price_sensitivities.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -663,7 +676,7 @@ def create_sensitivity_plots(
     
     # Plot 2: Tornado Diagram
     if 'tornado' in sensitivity_results:
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(12, 7))
         
         df = sensitivity_results['tornado']
         
@@ -676,18 +689,34 @@ def create_sensitivity_plots(
         left_bars = (df['low_case_pnl'] / 1e6) - base_pnl
         right_bars = (df['high_case_pnl'] / 1e6) - base_pnl
         
-        ax.barh(y_pos, right_bars, left=0, height=0.4, 
-               color='steelblue', label='High Case (+10%)')
-        ax.barh(y_pos, left_bars, left=0, height=0.4,
-               color='coral', label='Low Case (-10%)')
+        # Use professional color scheme
+        ax.barh(y_pos, right_bars, left=0, height=0.5, 
+               color='#2E86AB', label='High Case (+10%)', alpha=0.85)
+        ax.barh(y_pos, left_bars, left=0, height=0.5,
+               color='#F18F01', label='Low Case (-10%)', alpha=0.85)
         
+        # Clean labels
         ax.set_yticks(y_pos)
-        ax.set_yticklabels(df['parameter'].str.replace('_', ' ').str.title())
-        ax.set_xlabel('P&L Change from Base ($M)')
-        ax.set_title('Tornado Diagram: Parameter Impact on P&L', fontweight='bold')
-        ax.axvline(0, color='black', linewidth=0.8)
-        ax.legend()
-        ax.grid(True, alpha=0.3, axis='x')
+        labels = [p.replace('_', ' ').title() for p in df['parameter']]
+        ax.set_yticklabels(labels, fontsize=11, fontweight='bold')
+        ax.set_xlabel('P&L Change from Base ($M)', fontsize=12, fontweight='bold')
+        ax.set_title('Tornado Diagram: Parameter Impact on P&L', 
+                    fontsize=14, fontweight='bold', pad=15)
+        
+        # Center line
+        ax.axvline(0, color='black', linewidth=2, alpha=0.8)
+        
+        # Legend
+        ax.legend(loc='lower right', frameon=True, shadow=True, fontsize=10)
+        
+        # Grid
+        ax.grid(True, alpha=0.3, axis='x', linewidth=0.5)
+        
+        # Clean up spines
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_linewidth(1.5)
+        ax.spines['bottom'].set_linewidth(1.5)
         
         plt.tight_layout()
         plt.savefig(output_dir / 'tornado_diagram.png', dpi=300, bbox_inches='tight')
@@ -697,34 +726,47 @@ def create_sensitivity_plots(
     
     # Plot 3: Spread Sensitivity
     if 'spread' in sensitivity_results:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
         
         df = sensitivity_results['spread']
         
         # Plot 1: P&L vs spread
         ax1.plot(df['spread_adjustment'], df['total_pnl'] / 1e6,
-                linewidth=2, marker='o', color='steelblue')
-        ax1.set_xlabel('Spread Adjustment ($/MMBtu)')
-        ax1.set_ylabel('Total P&L ($M)')
-        ax1.set_title('P&L vs Price Spread', fontweight='bold')
-        ax1.grid(True, alpha=0.3)
-        ax1.axvline(0, color='red', linestyle='--', alpha=0.5)
+                linewidth=2.5, marker='o', markersize=7, 
+                color='#2E86AB', alpha=0.9)
+        ax1.set_xlabel('Spread Adjustment ($/MMBtu)', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Total P&L ($M)', fontsize=12, fontweight='bold')
+        ax1.set_title('P&L vs Price Spread', fontsize=13, fontweight='bold', pad=12)
+        ax1.grid(True, alpha=0.3, linewidth=0.5)
+        ax1.axvline(0, color='#E63946', linestyle='--', linewidth=2, alpha=0.7)
+        ax1.spines['top'].set_visible(False)
+        ax1.spines['right'].set_visible(False)
+        ax1.spines['left'].set_linewidth(1.5)
+        ax1.spines['bottom'].set_linewidth(1.5)
         
         # Plot 2: Destination mix vs spread
-        ax2.plot(df['spread_adjustment'], df['singapore_count'], 
-                label='Singapore', marker='o', linewidth=2)
-        ax2.plot(df['spread_adjustment'], df['japan_count'],
-                label='Japan', marker='s', linewidth=2)
-        ax2.plot(df['spread_adjustment'], df['china_count'],
-                label='China', marker='^', linewidth=2)
+        colors_dest = ['#F18F01', '#A23B72', '#06A77D']
+        markers = ['o', 's', '^']
+        destinations = ['singapore_count', 'japan_count', 'china_count']
+        dest_labels = ['Singapore', 'Japan', 'China']
         
-        ax2.set_xlabel('Spread Adjustment ($/MMBtu)')
-        ax2.set_ylabel('Number of Cargoes')
-        ax2.set_title('Optimal Destination vs Price Spread', fontweight='bold')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        ax2.axvline(0, color='red', linestyle='--', alpha=0.5)
+        for dest, label, color, marker in zip(destinations, dest_labels, colors_dest, markers):
+            ax2.plot(df['spread_adjustment'], df[dest], 
+                    label=label, marker=marker, markersize=7,
+                    linewidth=2.5, color=color, alpha=0.9)
         
+        ax2.set_xlabel('Spread Adjustment ($/MMBtu)', fontsize=12, fontweight='bold')
+        ax2.set_ylabel('Number of Cargoes', fontsize=12, fontweight='bold')
+        ax2.set_title('Optimal Destination vs Price Spread', fontsize=13, fontweight='bold', pad=12)
+        ax2.legend(loc='best', frameon=True, shadow=True, fontsize=10)
+        ax2.grid(True, alpha=0.3, linewidth=0.5)
+        ax2.axvline(0, color='#E63946', linestyle='--', linewidth=2, alpha=0.7)
+        ax2.spines['top'].set_visible(False)
+        ax2.spines['right'].set_visible(False)
+        ax2.spines['left'].set_linewidth(1.5)
+        ax2.spines['bottom'].set_linewidth(1.5)
+        
+        plt.suptitle('Spread Sensitivity Analysis', fontsize=14, fontweight='bold', y=0.98)
         plt.tight_layout()
         plt.savefig(output_dir / 'spread_sensitivity.png', dpi=300, bbox_inches='tight')
         plt.close()
@@ -733,7 +775,7 @@ def create_sensitivity_plots(
     
     # Plot 4: Stress Test Scenarios
     if 'stress_tests' in sensitivity_results:
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10))
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
         
         stress_data = sensitivity_results['stress_tests']
         
@@ -742,21 +784,24 @@ def create_sensitivity_plots(
         scenario_names = [stress_data[s]['scenario'] for s in scenarios]
         pnl_changes = [stress_data[s]['pnl_change'] / 1e6 for s in scenarios]
         
-        colors = ['green' if x > 0 else 'red' for x in pnl_changes]
-        bars = ax1.bar(range(len(scenarios)), pnl_changes, color=colors, alpha=0.7)
+        colors = ['#06A77D' if x > 0 else '#E63946' for x in pnl_changes]
+        bars = ax1.bar(range(len(scenarios)), pnl_changes, color=colors, alpha=0.85, edgecolor='black', linewidth=1.5)
         
         ax1.set_xticks(range(len(scenarios)))
-        ax1.set_xticklabels([name.replace(' ', '\n') for name in scenario_names], fontsize=9)
-        ax1.set_ylabel('P&L Change ($M)')
-        ax1.set_title('Stress Test P&L Impact', fontweight='bold')
-        ax1.axhline(0, color='black', linewidth=0.8)
-        ax1.grid(True, alpha=0.3, axis='y')
+        ax1.set_xticklabels([name.replace(' ', '\n') for name in scenario_names], fontsize=10, fontweight='bold')
+        ax1.set_ylabel('P&L Change ($M)', fontsize=11, fontweight='bold')
+        ax1.set_title('Stress Test P&L Impact', fontsize=12, fontweight='bold', pad=10)
+        ax1.axhline(0, color='black', linewidth=2, alpha=0.8)
+        ax1.grid(True, alpha=0.3, axis='y', linewidth=0.5)
+        ax1.spines['top'].set_visible(False)
+        ax1.spines['right'].set_visible(False)
         
         # Add value labels on bars
         for bar, value in zip(bars, pnl_changes):
             height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height + (0.1 if height > 0 else -0.3),
-                    f'${value:.1f}M', ha='center', va='bottom' if height > 0 else 'top')
+            ax1.text(bar.get_x() + bar.get_width()/2., height + (0.15 if height > 0 else -0.35),
+                    f'${value:.1f}M', ha='center', va='bottom' if height > 0 else 'top',
+                    fontsize=10, fontweight='bold')
         
         # Plot 2: Strategy Changes Count
         strategy_changes = []
@@ -768,18 +813,23 @@ def create_sensitivity_plots(
             else:
                 strategy_changes.append(0)
         
-        bars2 = ax2.bar(range(len(scenarios)), strategy_changes, color='steelblue', alpha=0.7)
+        bars2 = ax2.bar(range(len(scenarios)), strategy_changes, color='#2E86AB', 
+                       alpha=0.85, edgecolor='black', linewidth=1.5)
         ax2.set_xticks(range(len(scenarios)))
-        ax2.set_xticklabels([name.replace(' ', '\n') for name in scenario_names], fontsize=9)
-        ax2.set_ylabel('Strategy Changes')
-        ax2.set_title('Strategy Robustness', fontweight='bold')
-        ax2.grid(True, alpha=0.3, axis='y')
+        ax2.set_xticklabels([name.replace(' ', '\n') for name in scenario_names], 
+                           fontsize=10, fontweight='bold')
+        ax2.set_ylabel('Strategy Changes', fontsize=11, fontweight='bold')
+        ax2.set_title('Strategy Robustness', fontsize=12, fontweight='bold', pad=10)
+        ax2.grid(True, alpha=0.3, axis='y', linewidth=0.5)
+        ax2.spines['top'].set_visible(False)
+        ax2.spines['right'].set_visible(False)
         
         # Add value labels
         for bar, value in zip(bars2, strategy_changes):
             height = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width()/2., height + 0.05,
-                    f'{int(value)}', ha='center', va='bottom')
+            ax2.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                    f'{int(value)}', ha='center', va='bottom',
+                    fontsize=10, fontweight='bold')
         
         # Plot 3: Monthly Strategy Changes Heatmap
         months = list(CARGO_CONTRACT['delivery_period'])
@@ -799,17 +849,17 @@ def create_sensitivity_plots(
                 
                 heatmap_data[i, j] = 1 if changed else 0
         
-        im = ax3.imshow(heatmap_data, cmap='RdYlGn_r', aspect='auto')
+        im = ax3.imshow(heatmap_data, cmap='RdYlGn_r', aspect='auto', alpha=0.85)
         ax3.set_xticks(range(len(months)))
-        ax3.set_xticklabels([m.split('-')[1] for m in months])  # Show month only
+        ax3.set_xticklabels([m.split('-')[1] for m in months], fontsize=10)
         ax3.set_yticks(range(len(scenarios)))
-        ax3.set_yticklabels([s.replace('_', ' ').title() for s in scenarios])
-        ax3.set_xlabel('Delivery Month')
-        ax3.set_title('Monthly Strategy Changes', fontweight='bold')
+        ax3.set_yticklabels([s.replace('_', ' ').title() for s in scenarios], fontsize=10)
+        ax3.set_xlabel('Delivery Month', fontsize=11, fontweight='bold')
+        ax3.set_title('Monthly Strategy Changes', fontsize=12, fontweight='bold', pad=10)
         
         # Add colorbar
-        cbar = plt.colorbar(im, ax=ax3, shrink=0.6)
-        cbar.set_label('Strategy Changed', rotation=270, labelpad=15)
+        cbar = plt.colorbar(im, ax=ax3, shrink=0.7)
+        cbar.set_label('Strategy Changed', rotation=270, labelpad=20, fontsize=10, fontweight='bold')
         
         # Plot 4: Risk-Return Summary
         # Calculate risk metrics for each scenario
@@ -830,20 +880,24 @@ def create_sensitivity_plots(
         returns = [m['return_pct'] for m in risk_metrics]
         risks = [m['risk_score'] for m in risk_metrics]
         
-        scatter = ax4.scatter(risks, returns, s=100, alpha=0.7, c=colors)
+        scatter = ax4.scatter(risks, returns, s=200, alpha=0.8, c=colors, 
+                             edgecolors='black', linewidths=2)
         
         for i, (risk, ret) in enumerate(zip(risks, returns)):
             ax4.annotate(scenario_names[i].split()[0],  # First word of scenario name
                         (risk, ret), xytext=(5, 5), textcoords='offset points',
-                        fontsize=9)
+                        fontsize=10, fontweight='bold')
         
-        ax4.set_xlabel('Risk Score (% Strategy Changes)')
-        ax4.set_ylabel('Return Impact (%)')
-        ax4.set_title('Risk-Return Profile', fontweight='bold')
-        ax4.grid(True, alpha=0.3)
-        ax4.axhline(0, color='black', linewidth=0.8, alpha=0.5)
-        ax4.axvline(0, color='black', linewidth=0.8, alpha=0.5)
+        ax4.set_xlabel('Risk Score (% Strategy Changes)', fontsize=11, fontweight='bold')
+        ax4.set_ylabel('Return Impact (%)', fontsize=11, fontweight='bold')
+        ax4.set_title('Risk-Return Profile', fontsize=12, fontweight='bold', pad=10)
+        ax4.grid(True, alpha=0.3, linewidth=0.5)
+        ax4.axhline(0, color='black', linewidth=2, alpha=0.6)
+        ax4.axvline(0, color='black', linewidth=2, alpha=0.6)
+        ax4.spines['top'].set_visible(False)
+        ax4.spines['right'].set_visible(False)
         
+        plt.suptitle('Stress Test Analysis', fontsize=14, fontweight='bold', y=0.995)
         plt.tight_layout()
         plt.savefig(output_dir / 'stress_test_analysis.png', dpi=300, bbox_inches='tight')
         plt.close()
